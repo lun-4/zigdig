@@ -9,4 +9,4 @@ test "basic add functionality" {
     testing.expect(add(3, 7) == 10);
 }
 
-pub fn main() !void {}
+pub fn main() void {}
