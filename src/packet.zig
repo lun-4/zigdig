@@ -1,6 +1,7 @@
 const std = @import("std");
+const rand = std.rand;
+const os = std.os;
 const testing = std.testing;
-
 const fmt = std.fmt;
 
 pub const DNSHeader = packed struct {
@@ -44,40 +45,102 @@ pub const DNSHeader = packed struct {
         var buf: [1024]u8 = undefined;
         return fmt.bufPrint(&buf, "DNSHeader<qd={},an={},ns={},ar={}>", self.qdcount, self.ancount, self.nscount, self.arcount);
     }
+
+    pub fn export_out(self: *DNSHeader, buffer: []u8) []u8 {
+        return "";
+    }
 };
 
 // TODO
-pub const DNSQuestion = struct {};
-pub const DNSAnswer = struct {};
-pub const DNSAuthority = struct {};
-pub const DNSAdditional = struct {};
+pub const DNSQuestion = packed struct {
+    pub fn export_out(self: *DNSQuestion, buffer: []u8) []u8 {
+        return "";
+    }
+};
+
+pub const DNSResource = packed struct {
+    pub fn export_out(self: *DNSResource, buffer: []u8) []u8 {
+        return "";
+    }
+};
 
 pub const DNSPacket = struct {
     const Self = @This();
+    pub const Error = error{};
 
     pub header: DNSHeader,
     pub questions: []DNSQuestion,
-    pub answer: []DNSAnswer,
-    pub authority: []DNSAuthority,
-    pub additional: []DNSAdditional,
+    pub answers: []DNSResource,
+    pub authority: []DNSResource,
+    pub additional: []DNSResource,
 
     pub fn init() DNSPacket {
         var self = DNSPacket{
             .header = DNSHeader.init(),
             .questions = []DNSQuestion{},
-            .answer = []DNSAnswer{},
-            .authority = []DNSAuthority{},
-            .additional = []DNSAdditional{},
+            .answers = []DNSResource{},
+            .authority = []DNSResource{},
+            .additional = []DNSResource{},
         };
         return self;
+    }
+
+    pub fn fill(self: *DNSPacket, buffer: std.io.InStream(Error)) void {
+        // TODO: read
+        return;
     }
 
     pub fn as_str(self: *DNSPacket) ![]u8 {
         var buf: [1024]u8 = undefined;
         return fmt.bufPrint(&buf, "DNSPacket<{}>", self.header.as_str());
     }
+
+    pub fn is_valid(self: *DNSPacket) bool {
+        var valid = (self.questions.len == self.header.qdcount and
+            self.answer.len == self.ancount and
+            self.authority.len == self.nscount and
+            self.additional == self.arcount);
+        return valid;
+    }
+
+    pub fn export_out(self: *DNSPacket, buffer: []u8) ![]u8 {
+        return try std.fmt.bufPrint(buffer, "{}{}{}{}{}", self.header.export_out(buffer), try self.export_qdlist(buffer), try self.export_list(self.answers, buffer), try self.export_list(self.authority, buffer), try self.export_list(self.additional, buffer));
+    }
+
+    fn export_qdlist(self: *DNSPacket, buffer: []u8) ![]u8 {
+        // TODO: this should maybe be better. probably giving both
+        // buffer and out as args
+        var out: []u8 = undefined;
+
+        for (self.questions) |question| {
+            var qd_out = question.export_out(buffer);
+
+            // simple concat using bufPrint
+            out = try fmt.bufPrint(buffer, "{}{}", out, qd_out);
+        }
+
+        return out;
+    }
+
+    fn export_list(self: *DNSPacket, list: []DNSResource, buffer: []u8) ![]u8 {
+        var out: []u8 = undefined;
+
+        for (list) |resource| {
+            var rs_out = resource.export_out(buffer);
+            out = try fmt.bufPrint(buffer, "{}{}", out, rs_out);
+        }
+
+        return out;
+    }
 };
 
 test "packet init" {
-    var packet = DNSPacket{};
+    var packet = DNSPacket.init();
+    var r = rand.DefaultPrng.init(os.time.timestamp());
+
+    packet.header.id = r.random.int(u16);
+
+    var buf: [2048]u8 = undefined;
+    const exported = packet.export_out(&buf);
+    // packet.fill etc
 }
