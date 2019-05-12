@@ -13,16 +13,6 @@ pub fn build(b: *Builder) void {
     const lib = b.addStaticLibrary("zigdig", "src/main.zig");
     lib.setBuildMode(mode);
 
-    const names = [][]const u8{"packet"};
-
-    const sources = [][]const u8{"src/packet.zig"};
-
-    for (names) |name, idx| {
-        // get name and source path
-        var obj_step = b.addObject(name, sources[idx]);
-        b.default_step.dependOn(&obj_step.step);
-    }
-
     var main_tests = b.addTest("src/main.zig");
     main_tests.setBuildMode(mode);
 
