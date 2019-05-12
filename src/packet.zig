@@ -43,11 +43,13 @@ pub const DNSHeader = packed struct {
 
     pub fn as_str(self: *DNSHeader) ![]u8 {
         var buf: [1024]u8 = undefined;
-        return fmt.bufPrint(&buf, "DNSHeader<qd={},an={},ns={},ar={}>", self.qdcount, self.ancount, self.nscount, self.arcount);
+        return fmt.bufPrint(&buf, "DNSHeader<id={},qd={},an={},ns={},ar={}>", self.id, self.qdcount, self.ancount, self.nscount, self.arcount);
     }
 
     pub fn export_out(self: *DNSHeader, buffer: []u8) []u8 {
-        return "";
+        //return @bitCast([]u8, @alignCast(@alignOf([]u8), self).*);
+        var aligned = @alignCast(@alignOf([]u8), self);
+        return @ptrCast(*[]u8, aligned).*;
     }
 };
 
@@ -140,7 +142,9 @@ test "packet init" {
 
     packet.header.id = r.random.int(u16);
 
-    var buf: [2048]u8 = undefined;
+    var buf: [5012]u8 = undefined;
     const exported = packet.export_out(&buf);
+    std.debug.warn("\nexported: '{}'\n", exported);
+    std.debug.warn("\n{}\n", @typeName(@typeOf(exported)));
     // packet.fill etc
 }
