@@ -1,12 +1,9 @@
 const std = @import("std");
-const testing = std.testing;
 
-export fn add(a: i32, b: i32) i32 {
-    return a + b;
+const packet = @import("packet.zig");
+
+pub fn main() anyerror!void {
+    var pack = packet.DNSPacket.init();
+    var buf: [1024]u8 = undefined;
+    std.debug.warn("{}\n", pack.as_str());
 }
-
-test "basic add functionality" {
-    testing.expect(add(3, 7) == 10);
-}
-
-pub fn main() void {}
