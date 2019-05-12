@@ -46,8 +46,7 @@ pub const DNSHeader = packed struct {
         return fmt.bufPrint(&buf, "DNSHeader<id={},qd={},an={},ns={},ar={}>", self.id, self.qdcount, self.ancount, self.nscount, self.arcount);
     }
 
-    pub fn export_out(self: *DNSHeader, buffer: []u8) []u8 {
-        //return @bitCast([]u8, @alignCast(@alignOf([]u8), self).*);
+    pub fn export_out(self: *DNSHeader) []u8 {
         var aligned = @alignCast(@alignOf([]u8), self);
         return @ptrCast(*[]u8, aligned).*;
     }
@@ -55,13 +54,13 @@ pub const DNSHeader = packed struct {
 
 // TODO
 pub const DNSQuestion = packed struct {
-    pub fn export_out(self: *DNSQuestion, buffer: []u8) []u8 {
+    pub fn export_out(self: *DNSQuestion) []u8 {
         return "";
     }
 };
 
 pub const DNSResource = packed struct {
-    pub fn export_out(self: *DNSResource, buffer: []u8) []u8 {
+    pub fn export_out(self: *DNSResource) []u8 {
         return "";
     }
 };
@@ -106,7 +105,7 @@ pub const DNSPacket = struct {
     }
 
     pub fn export_out(self: *DNSPacket, buffer: []u8) ![]u8 {
-        return try std.fmt.bufPrint(buffer, "{}{}{}{}{}", self.header.export_out(buffer), try self.export_qdlist(buffer), try self.export_list(self.answers, buffer), try self.export_list(self.authority, buffer), try self.export_list(self.additional, buffer));
+        return try std.fmt.bufPrint(buffer, "{}{}{}{}{}", self.header.export_out(), try self.export_qdlist(buffer), try self.export_list(self.answers, buffer), try self.export_list(self.authority, buffer), try self.export_list(self.additional, buffer));
     }
 
     fn export_qdlist(self: *DNSPacket, buffer: []u8) ![]u8 {
@@ -115,7 +114,7 @@ pub const DNSPacket = struct {
         var out: []u8 = undefined;
 
         for (self.questions) |question| {
-            var qd_out = question.export_out(buffer);
+            var qd_out = question.export_out();
 
             // simple concat using bufPrint
             out = try fmt.bufPrint(buffer, "{}{}", out, qd_out);
@@ -128,7 +127,7 @@ pub const DNSPacket = struct {
         var out: []u8 = undefined;
 
         for (list) |resource| {
-            var rs_out = resource.export_out(buffer);
+            var rs_out = resource.export_out();
             out = try fmt.bufPrint(buffer, "{}{}", out, rs_out);
         }
 
