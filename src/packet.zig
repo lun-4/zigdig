@@ -61,7 +61,7 @@ pub const DNSHeader = packed struct {
 
 pub const DNSName = struct {
     len: u8,
-    name: []u8,
+    value: []u8,
 };
 
 pub const DNSQuestion = struct {
@@ -125,23 +125,26 @@ pub const DNSPacket = struct {
         try serializer.serialize(self.header);
     }
 
+    /// Deserializes a DNSName, which represents a length-prefixed slice of u8.
     fn deserializeName(self: *DNSPacket, deserializer: var) !DNSName {
         var len = try deserializer.deserialize(u8);
-        var name = try self.*.allocator.alloc(u8, len);
+        var value = try self.*.allocator.alloc(u8, len);
 
         var i: usize = 0;
 
         while (i < len) {
-            name[i] = try deserializer.deserialize(u8);
+            value[i] = try deserializer.deserialize(u8);
             i += 1;
         }
 
         return DNSName{
             .len = len,
-            .name = name,
+            .value = value,
         };
     }
 
+    /// Deserialize a list of DNSResource which sizes are controlled by the
+    /// header's given count.
     fn deserialResourceList(
         self: *DNSPacket,
         deserializer: var,
