@@ -5,8 +5,8 @@ const rand = std.rand;
 const os = std.os;
 const testing = std.testing;
 const fmt = std.fmt;
-
 const io = std.io;
+const Allocator = std.mem.Allocator;
 
 pub const DNSHeader = packed struct {
     id: u16,
@@ -57,12 +57,6 @@ pub const DNSHeader = packed struct {
             self.arcount,
         );
     }
-
-    pub fn export_out(self: *DNSHeader) []u8 {
-        var out: [512]u8 = undefined;
-        @memcpy(&out, @ptrCast([*]u8, self), 512);
-        return &out;
-    }
 };
 
 pub const DNSName = struct {
@@ -71,9 +65,9 @@ pub const DNSName = struct {
 };
 
 pub const DNSQuestion = struct {
-    qname: DNSName,
-    qtype: u16,
-    qclass: u16,
+    pub qname: DNSName,
+    pub qtype: u16,
+    pub qclass: u16,
 };
 
 pub const DNSResource = struct {
@@ -98,10 +92,13 @@ pub const DNSPacket = struct {
     pub authority: []DNSResource,
     pub additional: []DNSResource,
 
+    allocator: *Allocator,
+
     /// Caller owns the memory.
-    pub fn init(allocator: *std.mem.Allocator) !DNSPacket {
+    pub fn init(allocator: *Allocator) !DNSPacket {
         var self = DNSPacket{
             .header = DNSHeader.init(),
+            .allocator = allocator,
 
             .questions = try allocator.alloc(DNSQuestion, 1 << 16),
             .answers = try allocator.alloc(DNSResource, 1 << 16),
@@ -127,19 +124,46 @@ pub const DNSPacket = struct {
         try serializer.serialize(self.header);
     }
 
+    fn deserializeName(self: *DNSPacket, deserializer: var) !DNSName {
+        var len = try deserializer.deserialize(u8);
+        var name = try self.*.allocator.alloc(u8, len);
+
+        var i: usize = 0;
+
+        while (i < len) {
+            name[i] = try deserializer.deserialize(u8);
+            i += 1;
+        }
+
+        return DNSName{
+            .len = len,
+            .name = name,
+        };
+    }
+
     pub fn deserialize(self: *DNSPacket, deserializer: var) !void {
         self.*.header = try deserializer.deserialize(DNSHeader);
+
+        // deserialize our questions, but since they contain DNSName,
+        // the deserialization is messier than what it should be..
 
         var i: usize = 0;
         while (i < self.*.header.qdcount) {
             i += 1;
+
+            // question contains {name, qtype, qclass}
+            var name = try self.deserializeName(deserializer);
+            var qtype = try deserializer.deserialize(u16);
+            var qclass = try deserializer.deserialize(u16);
+
+            var question = DNSQuestion{
+                .qname = name,
+                .qtype = qtype,
+                .qclass = qclass,
+            };
+
+            self.*.questions[i] = question;
         }
-
-        // TODO
-        // * read qdcount DNSQuestion.
-        // * when reading names, read an u8, then read many other u8's
-
-        // self.*.questions = try deserializer.deserialize([]DNSQuestion);
     }
 };
 
