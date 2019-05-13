@@ -141,6 +141,41 @@ pub const DNSPacket = struct {
         };
     }
 
+    fn deserialResourceList(
+        self: *DNSPacket,
+        deserializer: var,
+        comptime header_field: []const u8,
+        comptime target_field: []const u8,
+    ) !void {
+        var i: usize = 0;
+        var total = @field(self.*.header, header_field);
+        var rs_list = @field(self.*, target_field);
+
+        while (i < total) {
+            // get typeinfo from the main struct via extracting the slice's
+            // child type first
+            const info = @typeInfo(@typeOf(rs_list).child).Struct;
+
+            for (info.fields) |*field_info| {
+                const name = field_info.name;
+                const fieldType = field_info.field_type;
+                var value: fieldType = undefined;
+
+                // deserializing DNSNames involves allocating a
+                // runtime-known string, which means its a pointer,
+                // which means its not deserializable BY DEFAULT.
+                if (fieldType == DNSName) {
+                    value = try self.deserializeName(deserializer);
+                } else {
+                    value = try deserializer.deserialize(fieldType);
+                }
+
+                rs_list.*[i] = value;
+            }
+            i += 1;
+        }
+    }
+
     pub fn deserialize(self: *DNSPacket, deserializer: var) !void {
         self.*.header = try deserializer.deserialize(DNSHeader);
 
@@ -164,6 +199,12 @@ pub const DNSPacket = struct {
 
             self.*.questions[i] = question;
         }
+
+        try self.deserialResourceList(
+            deserializer,
+            "ancount",
+            "answers",
+        );
     }
 };
 
