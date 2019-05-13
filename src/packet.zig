@@ -120,50 +120,12 @@ pub const DNSPacket = struct {
         try serializer.serialize(self.header);
     }
 
-    pub fn export_out(self: *DNSPacket, buffer: []u8) ![]u8 {
-        var serializer = io.Serializer(
-            builtin.Endian.Big,
-            io.Packing.Bit,
-        );
-        return try std.fmt.bufPrint(
-            buffer,
-            "{}{}{}{}{}",
-            self.header.export_out(),
-            try self.export_qdlist(buffer),
-            try self.export_list(self.answers, buffer),
-            try self.export_list(self.authority, buffer),
-            try self.export_list(self.additional, buffer),
-        );
-    }
-
-    fn export_qdlist(self: *DNSPacket, buffer: []u8) ![]u8 {
-        // TODO: this should maybe be better. probably giving both
-        // buffer and out as args
-        var out: []u8 = undefined;
-
-        for (self.questions) |question| {
-            var qd_out = question.export_out();
-
-            // simple concat using bufPrint
-            out = try fmt.bufPrint(buffer, "{}{}", out, qd_out);
-        }
-
-        return out;
-    }
-
-    fn export_list(self: *DNSPacket, list: []DNSResource, buffer: []u8) ![]u8 {
-        var out: []u8 = undefined;
-
-        for (list) |resource| {
-            var rs_out = resource.export_out();
-            out = try fmt.bufPrint(buffer, "{}{}", out, rs_out);
-        }
-
-        return out;
+    pub fn deserialize(self: *DNSPacket, deserializer: var) !void {
+        self.*.header = try deserializer.deserialize(DNSHeader);
     }
 };
 
-test "packet init" {
+test "DNSPacket serialize/deserialize" {
     // setup a random id packet
     var packet = DNSPacket.init();
     var r = rand.DefaultPrng.init(os.time.timestamp());
@@ -173,6 +135,7 @@ test "packet init" {
     // then we'll serialize it under a buffer on the stack,
     // deserialize it, and the header.id should be equal to random_id
     const OutError = io.SliceOutStream.Error;
+    const InError = io.SliceInStream.Error;
 
     var buf: [1024]u8 = undefined;
     var out = io.SliceOutStream.init(buf[0..]);
@@ -184,4 +147,14 @@ test "packet init" {
     try serializer.flush();
 
     std.debug.warn("\nexported: ({}) '{}'\n", buf.len, buf);
+
+    // deserialize it
+    var in = io.SliceInStream.init(buf[0..]);
+    var in_stream = &in.stream;
+
+    var deserializer = io.Deserializer(.Big, .Bit, InError).init(in_stream);
+
+    var new_packet = try deserializer.deserialize(DNSPacket);
+
+    testing.expectEqual(new_packet.header.id, packet.header.id);
 }
