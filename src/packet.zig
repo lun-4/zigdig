@@ -88,23 +88,23 @@ pub const DNSPacket = struct {
     pub const Error = error{};
 
     pub header: DNSHeader,
-    pub questions: []DNSQuestion,
-    pub answers: []DNSResource,
-    pub authority: []DNSResource,
-    pub additional: []DNSResource,
+    pub questions: ?[]DNSQuestion,
+    pub answers: ?[]DNSResource,
+    pub authority: ?[]DNSResource,
+    pub additional: ?[]DNSResource,
 
     allocator: *Allocator,
 
     /// Caller owns the memory.
-    pub fn init(allocator: *Allocator) !DNSPacket {
+    pub fn init(allocator: *Allocator) DNSPacket {
         var self = DNSPacket{
             .header = DNSHeader.init(),
             .allocator = allocator,
 
-            .questions = try allocator.alloc(DNSQuestion, 1 << 16),
-            .answers = try allocator.alloc(DNSResource, 1 << 16),
-            .authority = try allocator.alloc(DNSResource, 1 << 16),
-            .additional = try allocator.alloc(DNSResource, 1 << 16),
+            .questions = null,
+            .answers = null,
+            .authority = null,
+            .additional = null,
         };
         return self;
     }
@@ -115,10 +115,10 @@ pub const DNSPacket = struct {
     }
 
     pub fn is_valid(self: *DNSPacket) bool {
-        return (self.questions.len == self.header.qdcount and
-            self.answers.len == self.header.ancount and
-            self.authority.len == self.header.nscount and
-            self.additional.len == self.header.arcount);
+        return (self.questions.?.len == self.header.qdcount and
+            self.answers.?.len == self.header.ancount and
+            self.authority.?.len == self.header.nscount and
+            self.additional.?.len == self.header.arcount);
     }
 
     pub fn serialize(self: DNSPacket, serializer: var) !void {
@@ -156,9 +156,8 @@ pub const DNSPacket = struct {
         var rs_list = @field(self.*, target_field);
 
         while (i < total) {
-            // get typeinfo from the main struct via extracting the slice's
-            // child type first
-            const list_type = @typeOf(rs_list);
+            const optional_type = @typeOf(rs_list);
+            const list_type = @typeInfo(optional_type).Optional.child;
             const list_info = @typeInfo(list_type).Pointer;
             const info = @typeInfo(list_info.child).Struct;
 
@@ -178,14 +177,29 @@ pub const DNSPacket = struct {
                     value = try deserializer.deserialize(fieldType);
                 }
 
-                @field(rs_list[i], name) = value;
+                @field(rs_list.?[i], name) = value;
             }
             i += 1;
         }
     }
 
+    fn allocSlice(
+        self: *DNSPacket,
+        comptime field_name: []const u8,
+        comptime T: type,
+        size: usize,
+    ) !void {
+        @field(self.*, field_name) = try self.allocator.alloc(T, size);
+    }
+
     pub fn deserialize(self: *DNSPacket, deserializer: var) !void {
         self.*.header = try deserializer.deserialize(DNSHeader);
+
+        // allocate the slices based on header data
+        try self.allocSlice("questions", DNSQuestion, self.*.header.qdcount);
+        try self.allocSlice("answers", DNSResource, self.*.header.ancount);
+        try self.allocSlice("authority", DNSResource, self.*.header.nscount);
+        try self.allocSlice("additional", DNSResource, self.*.header.arcount);
 
         // deserialize our questions, but since they contain DNSName,
         // the deserialization is messier than what it should be..
@@ -205,7 +219,7 @@ pub const DNSPacket = struct {
                 .qclass = qclass,
             };
 
-            self.*.questions[i] = question;
+            self.*.questions.?[i] = question;
         }
 
         try self.deserialResourceList(deserializer, "ancount", "answers");
@@ -221,7 +235,7 @@ test "DNSPacket serialize/deserialize" {
     errdefer arena.deinit();
     const allocator = &arena.allocator;
 
-    var packet = try DNSPacket.init(allocator);
+    var packet = DNSPacket.init(allocator);
 
     var r = rand.DefaultPrng.init(os.time.timestamp());
     const random_id = r.random.int(u16);
