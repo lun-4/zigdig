@@ -118,7 +118,6 @@ pub const DNSPacket = struct {
 
     pub fn serialize(self: DNSPacket, serializer: var) !void {
         try serializer.serialize(self.header);
-        try serializer.flush();
     }
 
     pub fn export_out(self: *DNSPacket, buffer: []u8) ![]u8 {
@@ -179,13 +178,10 @@ test "packet init" {
     var out = io.SliceOutStream.init(buf[0..]);
     var out_stream = &out.stream;
 
-    var serializer = io.Serializer(
-        builtin.Endian.Big,
-        io.Packing.Bit,
-        OutError,
-    ).init(out_stream);
+    var serializer = io.Serializer(.Big, .Bit, OutError).init(out_stream);
 
     try serializer.serialize(packet);
+    try serializer.flush();
 
     std.debug.warn("\nexported: ({}) '{}'\n", buf.len, buf);
 }
