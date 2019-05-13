@@ -101,24 +101,22 @@ pub const DNSPacket = struct {
 
     pub fn fill(self: *DNSPacket, ptr: []u8) void {
         // TODO deserializer
-        // ????
-        @memcpy(&ptr, &self.header, @sizeOf(DNSHeader));
     }
 
     pub fn as_str(self: *DNSPacket) ![]u8 {
         var buf: [1024]u8 = undefined;
-        return fmt.bufPrint(&buf, "DNSPacket<{}>", self.header.as_str());
+        return try fmt.bufPrint(&buf, "DNSPacket<{}>", self.header.as_str());
     }
 
     pub fn is_valid(self: *DNSPacket) bool {
         var valid = (self.questions.len == self.header.qdcount and
-            self.answer.len == self.ancount and
-            self.authority.len == self.nscount and
-            self.additional == self.arcount);
+            self.answers.len == self.header.ancount and
+            self.authority.len == self.header.nscount and
+            self.additional.len == self.header.arcount);
         return valid;
     }
 
-    pub fn serialize(self: *DNSPacket, serializer: var) !void {
+    pub fn serialize(self: DNSPacket, serializer: var) !void {
         try serializer.serialize(self.header);
         try serializer.flush();
     }
@@ -181,9 +179,13 @@ test "packet init" {
     var out = io.SliceOutStream.init(buf[0..]);
     var out_stream = &out.stream;
 
-    var serializer = io.Serializer(builtin.Endian.Big, io.Packing.Bit, OutError).init(out_stream);
+    var serializer = io.Serializer(
+        builtin.Endian.Big,
+        io.Packing.Bit,
+        OutError,
+    ).init(out_stream);
 
-    try serializer.serialize(&packet);
+    try serializer.serialize(packet);
 
     std.debug.warn("\nexported: ({}) '{}'\n", buf.len, buf);
 }
