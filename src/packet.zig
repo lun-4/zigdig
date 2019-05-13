@@ -65,17 +65,27 @@ pub const DNSHeader = packed struct {
     }
 };
 
-// TODO
-pub const DNSQuestion = packed struct {
-    pub fn export_out(self: *DNSQuestion) []u8 {
-        return "";
-    }
+pub const DNSName = struct {
+    len: u8,
+    name: []u8,
 };
 
-pub const DNSResource = packed struct {
-    pub fn export_out(self: *DNSResource) []u8 {
-        return "";
-    }
+pub const DNSQuestion = struct {
+    qname: DNSName,
+    qtype: u16,
+    qclass: u16,
+};
+
+pub const DNSResource = struct {
+    name: DNSName,
+
+    rr_type: u16,
+    class: u16,
+    ttl: u32,
+    rdlength: u16,
+
+    // TODO: generics? maybe?
+    rdata: []u8,
 };
 
 pub const DNSPacket = struct {
@@ -122,6 +132,12 @@ pub const DNSPacket = struct {
 
     pub fn deserialize(self: *DNSPacket, deserializer: var) !void {
         self.*.header = try deserializer.deserialize(DNSHeader);
+
+        // TODO
+        // * read qdcount DNSQuestion.
+        // * when reading names, read an u8, then read many other u8's
+
+        // self.*.questions = try deserializer.deserialize([]DNSQuestion);
     }
 };
 
@@ -140,20 +156,15 @@ test "DNSPacket serialize/deserialize" {
     var buf: [1024]u8 = undefined;
     var out = io.SliceOutStream.init(buf[0..]);
     var out_stream = &out.stream;
-
     var serializer = io.Serializer(.Big, .Bit, OutError).init(out_stream);
 
     try serializer.serialize(packet);
     try serializer.flush();
 
-    std.debug.warn("\nexported: ({}) '{}'\n", buf.len, buf);
-
     // deserialize it
     var in = io.SliceInStream.init(buf[0..]);
     var in_stream = &in.stream;
-
     var deserializer = io.Deserializer(.Big, .Bit, InError).init(in_stream);
-
     var new_packet = try deserializer.deserialize(DNSPacket);
 
     testing.expectEqual(new_packet.header.id, packet.header.id);
