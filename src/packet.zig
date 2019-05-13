@@ -78,8 +78,9 @@ pub const DNSResource = struct {
     ttl: u32,
     rdlength: u16,
 
-    // TODO: generics? maybe?
-    rdata: []u8,
+    // it uses the same length-prefix as actual dns names.
+    // we can try redeserializing via SliceOutStream
+    rdata: DNSName,
 };
 
 pub const DNSPacket = struct {
@@ -154,9 +155,13 @@ pub const DNSPacket = struct {
         while (i < total) {
             // get typeinfo from the main struct via extracting the slice's
             // child type first
-            const info = @typeInfo(@typeOf(rs_list).child).Struct;
+            const list_type = @typeOf(rs_list);
+            const list_info = @typeInfo(list_type).Pointer;
+            const info = @typeInfo(list_info.child).Struct;
 
-            for (info.fields) |*field_info| {
+            //@compileLog(info.fields);
+
+            inline for (info.fields) |field_info| {
                 const name = field_info.name;
                 const fieldType = field_info.field_type;
                 var value: fieldType = undefined;
@@ -170,7 +175,7 @@ pub const DNSPacket = struct {
                     value = try deserializer.deserialize(fieldType);
                 }
 
-                rs_list.*[i] = value;
+                @field(rs_list[i], name) = value;
             }
             i += 1;
         }
