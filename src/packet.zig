@@ -205,11 +205,9 @@ pub const DNSPacket = struct {
             self.*.questions[i] = question;
         }
 
-        try self.deserialResourceList(
-            deserializer,
-            "ancount",
-            "answers",
-        );
+        try self.deserialResourceList(deserializer, "ancount", "answers");
+        try self.deserialResourceList(deserializer, "nscount", "authority");
+        try self.deserialResourceList(deserializer, "arcount", "additional");
     }
 };
 
