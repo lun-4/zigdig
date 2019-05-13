@@ -98,19 +98,17 @@ pub const DNSPacket = struct {
     pub authority: []DNSResource,
     pub additional: []DNSResource,
 
-    pub fn init() DNSPacket {
+    /// Caller owns the memory.
+    pub fn init(allocator: *std.mem.Allocator) !DNSPacket {
         var self = DNSPacket{
             .header = DNSHeader.init(),
-            .questions = []DNSQuestion{},
-            .answers = []DNSResource{},
-            .authority = []DNSResource{},
-            .additional = []DNSResource{},
+
+            .questions = try allocator.alloc(DNSQuestion, 1 << 16),
+            .answers = try allocator.alloc(DNSResource, 1 << 16),
+            .authority = try allocator.alloc(DNSResource, 1 << 16),
+            .additional = try allocator.alloc(DNSResource, 1 << 16),
         };
         return self;
-    }
-
-    pub fn fill(self: *DNSPacket, ptr: []u8) void {
-        // TODO deserializer
     }
 
     pub fn as_str(self: *DNSPacket) ![]u8 {
@@ -119,11 +117,10 @@ pub const DNSPacket = struct {
     }
 
     pub fn is_valid(self: *DNSPacket) bool {
-        var valid = (self.questions.len == self.header.qdcount and
+        return (self.questions.len == self.header.qdcount and
             self.answers.len == self.header.ancount and
             self.authority.len == self.header.nscount and
             self.additional.len == self.header.arcount);
-        return valid;
     }
 
     pub fn serialize(self: DNSPacket, serializer: var) !void {
@@ -132,6 +129,11 @@ pub const DNSPacket = struct {
 
     pub fn deserialize(self: *DNSPacket, deserializer: var) !void {
         self.*.header = try deserializer.deserialize(DNSHeader);
+
+        var i: usize = 0;
+        while (i < self.*.header.qdcount) {
+            i += 1;
+        }
 
         // TODO
         // * read qdcount DNSQuestion.
@@ -143,7 +145,13 @@ pub const DNSPacket = struct {
 
 test "DNSPacket serialize/deserialize" {
     // setup a random id packet
-    var packet = DNSPacket.init();
+    var da = std.heap.DirectAllocator.init();
+    var arena = std.heap.ArenaAllocator.init(&da.allocator);
+    errdefer arena.deinit();
+    const allocator = &arena.allocator;
+
+    var packet = try DNSPacket.init(allocator);
+
     var r = rand.DefaultPrng.init(os.time.timestamp());
     const random_id = r.random.int(u16);
     packet.header.id = random_id;
