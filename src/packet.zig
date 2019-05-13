@@ -226,6 +226,26 @@ pub const DNSPacket = struct {
         try self.deserialResourceList(deserializer, "nscount", "authority");
         try self.deserialResourceList(deserializer, "arcount", "additional");
     }
+
+    fn addQuestion(self: *DNSPacket, question: DNSQuestion) !void {
+        // bump it by 1 and realloc the questions slice to handle the new
+        // question
+        self.*.header.qdcount += 1;
+        if (self.*.questions) |questions| {
+            self.*.questions = try self.allocator.realloc(
+                questions,
+                self.*.header.qdcount,
+            );
+
+            // TODO: shouldn't this be a copy of sorts? aren't we allocating
+            // more than we should with this?
+            questions[self.*.header.qdcount - 1] = question;
+        } else {
+            // starting case where we need to allocate the question slice
+            self.*.questions = try self.allocator.alloc(DNSQuestion, 1);
+            self.*.questions.?[0] = question;
+        }
+    }
 };
 
 test "DNSPacket serialize/deserialize" {
