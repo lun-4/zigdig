@@ -43,12 +43,21 @@ pub const DNSHeader = packed struct {
 
     pub fn as_str(self: *DNSHeader) ![]u8 {
         var buf: [1024]u8 = undefined;
-        return fmt.bufPrint(&buf, "DNSHeader<id={},qd={},an={},ns={},ar={}>", self.id, self.qdcount, self.ancount, self.nscount, self.arcount);
+        return fmt.bufPrint(
+            &buf,
+            "DNSHeader<id={},qd={},an={},ns={},ar={}>",
+            self.id,
+            self.qdcount,
+            self.ancount,
+            self.nscount,
+            self.arcount,
+        );
     }
 
     pub fn export_out(self: *DNSHeader) []u8 {
-        var aligned = @alignCast(@alignOf([]u8), self);
-        return @ptrCast(*[]u8, aligned).*;
+        var out: [512]u8 = undefined;
+        @memcpy(&out, @ptrCast([*]u8, self), 512);
+        return &out;
     }
 };
 
@@ -86,9 +95,9 @@ pub const DNSPacket = struct {
         return self;
     }
 
-    pub fn fill(self: *DNSPacket, buffer: std.io.InStream(Error)) void {
-        // TODO: read
-        return;
+    pub fn fill(self: *DNSPacket, ptr: []u8) void {
+        // ????
+        @memcpy(&ptr, &self.header, @sizeOf(DNSHeader));
     }
 
     pub fn as_str(self: *DNSPacket) ![]u8 {
@@ -105,7 +114,15 @@ pub const DNSPacket = struct {
     }
 
     pub fn export_out(self: *DNSPacket, buffer: []u8) ![]u8 {
-        return try std.fmt.bufPrint(buffer, "{}{}{}{}{}", self.header.export_out(), try self.export_qdlist(buffer), try self.export_list(self.answers, buffer), try self.export_list(self.authority, buffer), try self.export_list(self.additional, buffer));
+        return try std.fmt.bufPrint(
+            buffer,
+            "{}{}{}{}{}",
+            self.header.export_out(),
+            try self.export_qdlist(buffer),
+            try self.export_list(self.answers, buffer),
+            try self.export_list(self.authority, buffer),
+            try self.export_list(self.additional, buffer),
+        );
     }
 
     fn export_qdlist(self: *DNSPacket, buffer: []u8) ![]u8 {
@@ -141,9 +158,12 @@ test "packet init" {
 
     packet.header.id = r.random.int(u16);
 
-    var buf: [5012]u8 = undefined;
-    const exported = packet.export_out(&buf);
-    std.debug.warn("\nexported: '{}'\n", exported);
-    std.debug.warn("\n{}\n", @typeName(@typeOf(exported)));
+    var buf: [5120]u8 = undefined;
+    const exported = packet.header.export_out();
+    std.debug.warn("\nexported: ({}) '{}'\n", exported.len, exported);
+
+    packet.fill(exported);
+    const exported2 = packet.header.export_out();
+    std.debug.warn("\nexported2: ({}) '{}'\n", exported2.len, exported2);
     // packet.fill etc
 }
