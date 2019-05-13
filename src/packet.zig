@@ -1,8 +1,12 @@
 const std = @import("std");
+const builtin = @import("builtin");
+
 const rand = std.rand;
 const os = std.os;
 const testing = std.testing;
 const fmt = std.fmt;
+
+const io = std.io;
 
 pub const DNSHeader = packed struct {
     id: u16,
@@ -96,6 +100,7 @@ pub const DNSPacket = struct {
     }
 
     pub fn fill(self: *DNSPacket, ptr: []u8) void {
+        // TODO deserializer
         // ????
         @memcpy(&ptr, &self.header, @sizeOf(DNSHeader));
     }
@@ -113,7 +118,16 @@ pub const DNSPacket = struct {
         return valid;
     }
 
+    pub fn serialize(self: *DNSPacket, serializer: var) !void {
+        try serializer.serialize(self.header);
+        try serializer.flush();
+    }
+
     pub fn export_out(self: *DNSPacket, buffer: []u8) ![]u8 {
+        var serializer = io.Serializer(
+            builtin.Endian.Big,
+            io.Packing.Bit,
+        );
         return try std.fmt.bufPrint(
             buffer,
             "{}{}{}{}{}",
@@ -153,17 +167,23 @@ pub const DNSPacket = struct {
 };
 
 test "packet init" {
+    // setup a random id packet
     var packet = DNSPacket.init();
     var r = rand.DefaultPrng.init(os.time.timestamp());
+    const random_id = r.random.int(u16);
+    packet.header.id = random_id;
 
-    packet.header.id = r.random.int(u16);
+    // then we'll serialize it under a buffer on the stack,
+    // deserialize it, and the header.id should be equal to random_id
+    const OutError = io.SliceOutStream.Error;
 
-    var buf: [5120]u8 = undefined;
-    const exported = packet.header.export_out();
-    std.debug.warn("\nexported: ({}) '{}'\n", exported.len, exported);
+    var buf: [1024]u8 = undefined;
+    var out = io.SliceOutStream.init(buf[0..]);
+    var out_stream = &out.stream;
 
-    packet.fill(exported);
-    const exported2 = packet.header.export_out();
-    std.debug.warn("\nexported2: ({}) '{}'\n", exported2.len, exported2);
-    // packet.fill etc
+    var serializer = io.Serializer(builtin.Endian.Big, io.Packing.Bit, OutError).init(out_stream);
+
+    try serializer.serialize(&packet);
+
+    std.debug.warn("\nexported: ({}) '{}'\n", buf.len, buf);
 }
