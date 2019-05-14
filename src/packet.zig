@@ -1,12 +1,15 @@
 const std = @import("std");
-const builtin = @import("builtin");
+const base64 = std.base64;
 
 const rand = std.rand;
 const os = std.os;
 const testing = std.testing;
 const fmt = std.fmt;
 const io = std.io;
+
 const Allocator = std.mem.Allocator;
+const OutError = io.SliceOutStream.Error;
+const InError = io.SliceInStream.Error;
 
 pub const DNSHeader = packed struct {
     id: u16,
@@ -263,8 +266,6 @@ test "DNSPacket serialize/deserialize" {
 
     // then we'll serialize it under a buffer on the stack,
     // deserialize it, and the header.id should be equal to random_id
-    const OutError = io.SliceOutStream.Error;
-    const InError = io.SliceInStream.Error;
 
     var buf: [1024]u8 = undefined;
     var out = io.SliceOutStream.init(buf[0..]);
@@ -281,4 +282,47 @@ test "DNSPacket serialize/deserialize" {
     var new_packet = try deserializer.deserialize(DNSPacket);
 
     testing.expectEqual(new_packet.header.id, packet.header.id);
+}
+
+fn serial(packet: DNSPacket) ![]u8 {
+    var buf: [1024]u8 = undefined;
+    var out = io.SliceOutStream.init(buf[0..]);
+    var out_stream = &out.stream;
+    var serializer = io.Serializer(.Big, .Bit, OutError).init(out_stream);
+
+    try serializer.serialize(packet);
+    try serializer.flush();
+    return buf[0..];
+}
+
+test "serialization of google.com/A" {
+    // setup a random id packet
+    var da = std.heap.DirectAllocator.init();
+    var arena = std.heap.ArenaAllocator.init(&da.allocator);
+    errdefer arena.deinit();
+    const allocator = &arena.allocator;
+
+    var pkt = DNSPacket.init(allocator);
+    var question = DNSQuestion{
+        .qname = DNSName{
+            .len = 10,
+            .value = &"google.com",
+        },
+
+        .qtype = 1,
+        .qclass = 1,
+    };
+
+    try pkt.addQuestion(question);
+    var out = try serial(pkt);
+
+    var buffer: [0x1000]u8 = undefined;
+    var encoded = buffer[0..base64.Base64Encoder.calcSize(out.len)];
+    base64.standard_encoder.encode(encoded, out);
+
+    testing.expectEqualSlices(
+        u8,
+        encoded,
+        "dKwBIAABAAAAAAABBmdvb2dsZQNjb20AAAEAAQAAKRAAAAAAAAAMAAoACMNmC6Uunlys",
+    );
 }
