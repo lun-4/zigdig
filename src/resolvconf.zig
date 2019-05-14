@@ -24,10 +24,6 @@ pub fn readNameservers() !NameserverList {
     var file = try os.File.openRead("/etc/resolv.conf");
     errdefer file.close();
 
-    // empty slice to start with
-    // also initialize it to all zero which is good enough.
-    // maybe, in the future, we can speed this up by only setting the
-    // first byte as 0
     var nameservers: NameserverList = undefined;
 
     // read file and put it all in memory, which is kinda
@@ -36,7 +32,7 @@ pub fn readNameservers() !NameserverList {
     // that reads bytes until '\n'. a reasonable buffer would be created
     // for each line, of course.
 
-    var buffer: [1024]u8 = undefined;
+    var buffer: [2048]u8 = undefined;
     var bytes_read = try file.read(&buffer);
     var it = mem.tokenize(buffer, "\n");
     var idx: usize = 0;
