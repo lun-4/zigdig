@@ -3,10 +3,12 @@ const os = std.os;
 
 const packet = @import("packet.zig");
 const proto = @import("proto.zig");
+const resolv = @import("resolvconf.zig");
 
 test "zigdig" {
     _ = @import("packet.zig");
     _ = @import("proto.zig");
+    _ = @import("resolvconf.zig");
 }
 
 pub fn main() anyerror!void {
@@ -30,4 +32,11 @@ pub fn main() anyerror!void {
     });
 
     std.debug.warn("{} {}\n", name, rr_type);
+
+    // read /etc/resolv.conf for nameserver
+    var nameservers = try resolv.readNameservers();
+
+    for (nameservers) |nameserver| {
+        std.debug.warn(nameserver);
+    }
 }
