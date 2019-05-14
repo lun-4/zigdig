@@ -3,7 +3,7 @@ const std = @import("std");
 const os = std.os;
 const mem = std.mem;
 
-const NameserverList = [10][256]u8;
+const NameserverList = [10][]const u8;
 
 fn processResolvLine(
     line: []const u8,
@@ -16,13 +16,7 @@ fn processResolvLine(
     var ns_it = std.mem.separate(line, " ");
     _ = ns_it.next().?;
 
-    // convert incoming []const u8 into [256]u8.
-    var ns_ip = ns_it.next().?;
-
-    var ns_ip_nice: [256]u8 = undefined;
-    std.mem.copy(u8, &ns_ip_nice, ns_ip);
-
-    nameservers[idx.*] = ns_ip_nice;
+    nameservers[idx.*] = ns_it.next().?;
     idx.* += 1;
 }
 
@@ -34,7 +28,7 @@ pub fn readNameservers() !NameserverList {
     // also initialize it to all zero which is good enough.
     // maybe, in the future, we can speed this up by only setting the
     // first byte as 0
-    var nameservers: NameserverList = [][256]u8{[]u8{0} ** 256} ** 10;
+    var nameservers: NameserverList = undefined;
 
     // read file and put it all in memory, which is kinda
     // sad that we need to do this, but that's life. maybe a better

@@ -60,8 +60,8 @@ pub const DNSHeader = packed struct {
 };
 
 pub const DNSName = struct {
-    len: u8,
-    value: []u8,
+    pub len: u8,
+    pub value: []u8,
 };
 
 pub const DNSQuestion = struct {

@@ -6,8 +6,9 @@ const io = std.io;
 
 const posix = os.posix;
 
-const DNSError = error{NetError};
+const DNSPacket = @import("packet.zig").DNSPacket;
 
+const DNSError = error{NetError};
 const OutError = io.SliceOutStream.Error;
 const InError = io.SliceInStream.Error;
 
@@ -25,7 +26,7 @@ pub fn openDNSSocket(addr: net.Address) !i32 {
 }
 
 pub fn sendDNSPacket(sockfd: i32, packet: DNSPacket, buffer: []u8) !void {
-    var out = io.SliceOutStream.inti(buffer);
+    var out = io.SliceOutStream.init(buffer);
     var out_stream = &out.stream;
     var serializer = io.Serializer(.Big, .Bit, OutError).init(out_stream);
 
@@ -35,8 +36,12 @@ pub fn sendDNSPacket(sockfd: i32, packet: DNSPacket, buffer: []u8) !void {
     try os.posixWrite(sockfd, buffer);
 }
 
-pub fn recvDNSPacket(sockfd: i32, buffer: []u8) !DNSPacket {
+pub fn recvDNSPacket(
+    sockfd: i32,
+    buffer: []u8,
+) !DNSPacket {
     var byte_count = try os.posixRead(sockfd, buffer);
+    std.debug.warn("bcount: {}\n", byte_count);
     if (byte_count == 0) return DNSError.NetError;
 
     var in = io.SliceInStream.init(buffer);
@@ -49,6 +54,5 @@ test "fake socket open/close" {
     var ip4addr = try std.net.parseIp4("127.0.0.1");
     var addr = std.net.Address.initIp4(ip4addr, 53);
     var sockfd = try openDNSSocket(addr);
-
-    os.close(sockfd);
+    errdefer os.close(sockfd);
 }
