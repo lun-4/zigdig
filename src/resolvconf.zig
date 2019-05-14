@@ -31,7 +31,10 @@ pub fn readNameservers() !NameserverList {
     errdefer file.close();
 
     // empty slice to start with
-    var nameservers: NameserverList = undefined;
+    // also initialize it to all zero which is good enough.
+    // maybe, in the future, we can speed this up by only setting the
+    // first byte as 0
+    var nameservers: NameserverList = [][256]u8{[]u8{0} ** 256} ** 10;
 
     // read file and put it all in memory, which is kinda
     // sad that we need to do this, but that's life. maybe a better
@@ -41,7 +44,7 @@ pub fn readNameservers() !NameserverList {
 
     var buffer: [1024]u8 = undefined;
     var bytes_read = try file.read(&buffer);
-    var it = mem.separate(buffer, "\n");
+    var it = mem.tokenize(buffer, "\n");
     var idx: usize = 0;
 
     while (it.next()) |line| {
