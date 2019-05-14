@@ -7,7 +7,7 @@ pub fn build(b: *Builder) void {
 
     // TODO separate exe entrypoint and lib entrypoint
 
-    const exe = b.addExecutable("dig", "src/main.zig");
+    const exe = b.addExecutable("zigdig", "src/main.zig");
     exe.setBuildMode(mode);
 
     const lib = b.addStaticLibrary("zigdig", "src/main.zig");
