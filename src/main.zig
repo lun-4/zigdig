@@ -37,6 +37,6 @@ pub fn main() anyerror!void {
     var nameservers = try resolv.readNameservers();
 
     for (nameservers) |nameserver| {
-        std.debug.warn(nameserver);
+        std.debug.warn("'{}' {}\n", nameserver, nameserver.len);
     }
 }

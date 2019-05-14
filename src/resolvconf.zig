@@ -44,17 +44,8 @@ pub fn readNameservers() !NameserverList {
     var it = mem.separate(buffer, "\n");
     var idx: usize = 0;
 
-    while (true) {
-        var line_unprep = it.next();
-
-        if (line_unprep) |line| {
-            processResolvLine(line, &nameservers, &idx);
-            continue;
-        }
-
-        // if line_unprep is null, then the SplitIterator is
-        // finished with reading our lines.
-        break;
+    while (it.next()) |line| {
+        processResolvLine(line, &nameservers, &idx);
     }
 
     return nameservers;
