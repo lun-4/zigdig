@@ -161,7 +161,7 @@ pub const DNSResource = struct {
 
     rr_type: u16,
     class: u16,
-    ttl: u32,
+    ttl: i32,
 
     // NOTE: this is DIFFERENT from DNSName due to rdlength being an u16,
     // instead of an u8.
@@ -230,26 +230,6 @@ pub const DNSPacket = struct {
         }
     }
 
-    fn deserializeLengthPrefix(
-        self: *DNSPacket,
-        comptime T: type,
-        comptime V: type,
-        deserializer: var,
-    ) !V {
-        var len = try deserializer.deserialize(T);
-        var value = try self.allocator.alloc(u8, len);
-
-        var i: usize = 0;
-        while (i < len) : (i += 1) {
-            value[i] = try deserializer.deserialize(u8);
-        }
-
-        return V{
-            .len = len,
-            .value = value,
-        };
-    }
-
     /// Deserializes a DNSName, which represents a slice of slice of u8 ([][]u8)
     fn deserializeName(self: *DNSPacket, deserializer: var) !DNSName {
         // allocate empty label slice
@@ -288,7 +268,18 @@ pub const DNSPacket = struct {
     }
 
     fn deserializeRData(self: *DNSPacket, deserializer: var) !DNSRData {
-        return try self.deserializeLengthPrefix(u16, DNSRData, deserializer);
+        var rdlength = try deserializer.deserialize(u16);
+        var rdata = try self.allocator.alloc(u8, rdlength);
+        var i: u16 = 0;
+
+        std.debug.warn("deserializing rdata: {} bytes\n", rdlength);
+
+        while (i < rdlength) : (i += 1) {
+            rdata[i] = try deserializer.deserialize(u8);
+            std.debug.warn("rdata[{}] = {} ", i, rdata[i]);
+        }
+
+        return DNSRData{ .len = rdlength, .value = rdata };
     }
 
     /// Deserialize a list of DNSResource which sizes are controlled by the
@@ -311,7 +302,9 @@ pub const DNSPacket = struct {
             var name = try self.deserializeName(deserializer);
             var rr_type = try deserializer.deserialize(u16);
             var class = try deserializer.deserialize(u16);
-            var ttl = try deserializer.deserialize(u32);
+            var ttl = try deserializer.deserialize(i32);
+
+            // rdlength and rdata are under deserializeRData
             var rdata = try self.deserializeRData(deserializer);
 
             rs_list[i] = DNSResource{
