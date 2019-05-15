@@ -308,12 +308,18 @@ pub const DNSPacket = struct {
         std.debug.warn("total={} rs_list={}\n", total, rs_list.ptr);
 
         while (i < total) : (i += 1) {
+            var name = try self.deserializeName(deserializer);
+            var rr_type = try deserializer.deserialize(u16);
+            var class = try deserializer.deserialize(u16);
+            var ttl = try deserializer.deserialize(u32);
+            var rdata = try self.deserializeRData(deserializer);
+
             rs_list[i] = DNSResource{
-                .name = try self.deserializeName(deserializer),
-                .rr_type = try deserializer.deserialize(u16),
-                .class = try deserializer.deserialize(u16),
-                .ttl = try deserializer.deserialize(u32),
-                .rdata = try self.deserializeRData(deserializer),
+                .name = name,
+                .rr_type = rr_type,
+                .class = class,
+                .ttl = ttl,
+                .rdata = rdata,
             };
         }
     }
