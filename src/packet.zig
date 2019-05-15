@@ -80,9 +80,62 @@ pub const DNSHeader = packed struct {
 };
 
 pub const DNSName = struct {
-    pub len: u8,
-    pub value: []u8,
+    pub labels: [][]const u8,
+
+    pub fn totalSize(self: *const DNSName) usize {
+        // by default, add the null octet at the end of it
+        var size: usize = 1;
+
+        for (self.labels) |label| {
+            // length octet + the actual label octets
+            size += @sizeOf(u8);
+            size += label.len * @sizeOf(u8);
+        }
+
+        // include null octet
+        size += @sizeOf(u8);
+
+        return size;
+    }
 };
+
+fn splitCount(comptime data: []const u8, comptime delim: u8) usize {
+    var size: usize = 0;
+
+    for (data) |byte| {
+        if (byte == delim) size += 1;
+    }
+
+    return size;
+}
+
+/// Get a DNSName out of a domain name. This is a comptime operation.
+pub fn toDNSName(comptime domain: []const u8) DNSName {
+    comptime {
+        std.debug.assert(domain.len <= 255);
+        var period_count = splitCount(domain, '.');
+        var labels: [period_count][]const u8 = undefined;
+
+        var it = std.mem.separate(domain, ".");
+        var labels_idx: usize = 0;
+
+        inline while (labels_idx < period_count) : (labels_idx += 1) {
+            var label = it.next().?;
+            labels[labels_idx] = label;
+        }
+
+        return DNSName{ .labels = labels[0..] };
+    }
+}
+
+test "toDNSName" {
+    const domain = "www.google.com";
+    var name = toDNSName(domain[0..]);
+    std.debug.assert(name.labels.len == 3);
+    testing.expect(std.mem.eql(u8, name.labels[0], "www"));
+    testing.expect(std.mem.eql(u8, name.labels[1], "google"));
+    testing.expect(std.mem.eql(u8, name.labels[2], "com"));
+}
 
 pub const DNSQuestion = struct {
     pub qname: DNSName,
@@ -153,10 +206,15 @@ pub const DNSPacket = struct {
         // TODO: for now, we're only serializing our questions due to this
         // being a client library, not a server library.
         for (self.questions) |question| {
-            try serializer.serialize(question.qname.len);
-            for (question.qname.value) |byte| {
-                try serializer.serialize(byte);
+            for (question.qname.labels) |label| {
+                try serializer.serialize(label.len);
+                for (label) |byte| {
+                    try serializer.serialize(byte);
+                }
             }
+
+            // null-octet for the end of labels
+            try serializer.serialize(u8(0));
 
             try serializer.serialize(question.qtype);
             try serializer.serialize(question.qclass);
@@ -183,9 +241,28 @@ pub const DNSPacket = struct {
         };
     }
 
-    /// Deserializes a DNSName, which represents a length-prefixed slice of u8.
+    /// Deserializes a DNSName, which represents a slice of slice of u8 ([][]u8)
     fn deserializeName(self: *DNSPacket, deserializer: var) !DNSName {
-        return try self.deserializeLengthPrefix(u8, DNSName, deserializer);
+        // allocate empty label slice
+        var labels: [][]u8 = try self.allocator.alloc([]u8, 0);
+        var labels_idx: usize = 0;
+
+        while (true) {
+            var label_size = try deserializer.deserialize(u8);
+            if (label_size == 0) break;
+
+            labels = try self.allocator.realloc(
+                labels,
+                labels_idx * label_size * @sizeOf(u8),
+            );
+
+            var label_idx: usize = 0;
+            while (label_idx < label_size) : (label_idx += 1) {
+                labels[labels_idx][label_idx] = try deserializer.deserialize(u8);
+            }
+        }
+
+        return DNSName{ .labels = labels };
     }
 
     fn deserializeRData(self: *DNSPacket, deserializer: var) !DNSRData {
@@ -294,8 +371,7 @@ pub const DNSPacket = struct {
         var res_size: usize = 0;
 
         // name for the resource
-        res_size += @sizeOf(u8);
-        res_size += resource.name.len * @sizeOf(u8);
+        res_size += resource.name.totalSize();
 
         // rr_type, class, ttl, rdlength are 3 u16's and one u32.
         res_size += @sizeOf(u16) * 3;
@@ -312,9 +388,9 @@ pub const DNSPacket = struct {
         var extra_size: usize = 0;
 
         for (self.questions) |question| {
-            // add qname (which is DNSName, which is u8 + (value.len* u8))
-            extra_size += @sizeOf(u8);
-            extra_size += question.qname.len * @sizeOf(u8);
+            // DNSName is composed of labels, each label is length-prefixed,
+            // so the total amount of bytes is ()
+            extra_size += question.qname.totalSize();
 
             // add both qtype and qclass (both u16's)
             extra_size += @sizeOf(u16);
@@ -414,12 +490,10 @@ test "serialization of google.com/A" {
     pkt.header.rd = true;
     pkt.header.z = 2;
 
-    var question = DNSQuestion{
-        .qname = DNSName{
-            .len = 10,
-            .value = &"google.com",
-        },
+    var qname = toDNSName("google.com");
 
+    var question = DNSQuestion{
+        .qname = qname,
         .qtype = 1,
         .qclass = 1,
     };
