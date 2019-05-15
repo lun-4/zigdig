@@ -210,7 +210,8 @@ pub const DNSPacket = struct {
         // being a client library, not a server library.
         for (self.questions) |question| {
             for (question.qname.labels) |label| {
-                try serializer.serialize(label.len);
+                try serializer.serialize(@intCast(u8, label.len));
+
                 for (label) |byte| {
                     try serializer.serialize(byte);
                 }
