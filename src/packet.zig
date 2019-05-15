@@ -260,6 +260,24 @@ pub const DNSPacket = struct {
         self.questions[self.header.qdcount - 1] = question;
     }
 
+    fn resourceSize(self: DNSPacket, resource: DNSResource) usize {
+        var res_size: usize = 0;
+
+        // name for the resource
+        res_size += @sizeOf(u8);
+        res_size += resource.name.len * @sizeOf(u8);
+
+        // rr_type, class, ttl, rdlength are 3 u16's and one u32.
+        res_size += @sizeOf(u16) * 3;
+        res_size += @sizeOf(u32);
+
+        // rdata
+        res_size += @sizeOf(u8);
+        res_size += resource.name.len * @sizeOf(u8);
+
+        return res_size;
+    }
+
     fn sliceSizes(self: DNSPacket) usize {
         var extra_size: usize = 0;
 
@@ -274,6 +292,9 @@ pub const DNSPacket = struct {
         }
 
         // TODO: the DNSResource slice sizes
+        for (self.answers) |answer| {
+            extra_size += self.resourceSize(answer);
+        }
 
         return extra_size;
     }

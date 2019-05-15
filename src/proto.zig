@@ -39,7 +39,8 @@ pub fn sendDNSPacket(sockfd: i32, packet: DNSPacket, buffer: []u8) !void {
 pub fn recvDNSPacket(
     sockfd: i32,
     buffer: []u8,
-) !DNSPacket {
+    pkt: *DNSPacket,
+) !void {
     var byte_count = try os.posixRead(sockfd, buffer);
     std.debug.warn("bcount: {}\n", byte_count);
     if (byte_count == 0) return DNSError.NetError;
@@ -47,7 +48,8 @@ pub fn recvDNSPacket(
     var in = io.SliceInStream.init(buffer);
     var in_stream = &in.stream;
     var deserializer = io.Deserializer(.Big, .Bit, InError).init(in_stream);
-    return try deserializer.deserialize(DNSPacket);
+
+    return try deserializer.deserializeInto(pkt);
 }
 
 test "fake socket open/close" {

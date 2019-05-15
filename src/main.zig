@@ -7,6 +7,7 @@ const proto = @import("proto.zig");
 const resolv = @import("resolvconf.zig");
 
 const DNSPacket = packet.DNSPacket;
+const Allocator = std.mem.Allocator;
 
 test "zigdig" {
     _ = @import("packet.zig");
@@ -14,15 +15,19 @@ test "zigdig" {
     _ = @import("resolvconf.zig");
 }
 
-fn resolve(addr: std.net.Address, pkt: DNSPacket) !bool {
+fn resolve(allocator: *Allocator, addr: std.net.Address, pkt: DNSPacket) !bool {
     var sockfd = try proto.openDNSSocket(addr);
     errdefer std.os.close(sockfd);
 
-    var buf: [5000]u8 = undefined;
+    var buf = try allocator.alloc(u8, pkt.size());
 
-    try proto.sendDNSPacket(sockfd, pkt, &buf);
-    var recv_pkt = try proto.recvDNSPacket(sockfd, &buf);
-    std.debug.warn("{}\n", recv_pkt.as_str());
+    // TODO: better values here
+    var recvbuf = try allocator.alloc(u8, 0x10000);
+    var recvpkt = try packet.DNSPacket.init(allocator);
+
+    try proto.sendDNSPacket(sockfd, pkt, buf);
+    try proto.recvDNSPacket(sockfd, recvbuf, &recvpkt);
+    std.debug.warn("{}\n", recvpkt.as_str());
 
     // TODO: complete, check errors, etc
 
@@ -36,6 +41,12 @@ fn makeDNSPacket(
 ) !DNSPacket {
     var qtype_i = try fmt.parseInt(u8, qtype, 10);
     var pkt = try DNSPacket.init(allocator);
+
+    // set random u16 as the id + all the other goodies in the header
+    var r = std.rand.DefaultPrng.init(std.os.time.timestamp());
+    const random_id = r.random.int(u16);
+    pkt.header.id = random_id;
+    pkt.header.rd = true;
 
     var question = packet.DNSQuestion{
         .qname = packet.DNSName{
@@ -51,6 +62,7 @@ fn makeDNSPacket(
     };
 
     try pkt.addQuestion(question);
+
     return pkt;
 }
 
@@ -88,9 +100,11 @@ pub fn main() anyerror!void {
         std.debug.warn("nameserver '{}'\n", nameserver);
 
         // TODO: ipv6 address support
-        var ip4addr = try std.net.parseIp4("127.0.0.1");
-        var addr = std.net.Address.initIp4(ip4addr, 36953);
+        //var ip4addr = try std.net.parseIp4("127.0.0.1");
+        //var addr = std.net.Address.initIp4(ip4addr, 36953);
+        var ip4addr = try std.net.parseIp4(nameserver);
+        var addr = std.net.Address.initIp4(ip4addr, 53);
 
-        if (try resolve(addr, pkt)) break;
+        if (try resolve(allocator, addr, pkt)) break;
     }
 }
