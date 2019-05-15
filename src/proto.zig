@@ -6,7 +6,9 @@ const io = std.io;
 
 const posix = os.posix;
 
-const DNSPacket = @import("packet.zig").DNSPacket;
+const packet = @import("packet.zig");
+const DNSPacket = packet.DNSPacket;
+const DNSHeader = packet.DNSHeader;
 
 const DNSError = error{NetError};
 const OutError = io.SliceOutStream.Error;
@@ -25,26 +27,39 @@ pub fn openDNSSocket(addr: net.Address) !i32 {
     return sockfd;
 }
 
-pub fn sendDNSPacket(sockfd: i32, packet: DNSPacket, buffer: []u8) !void {
+pub fn sendDNSPacket(sockfd: i32, pkt: DNSPacket, buffer: []u8) !void {
     var out = io.SliceOutStream.init(buffer);
     var out_stream = &out.stream;
     var serializer = io.Serializer(.Big, .Bit, OutError).init(out_stream);
 
-    try serializer.serialize(packet);
+    try serializer.serialize(pkt);
     try serializer.flush();
 
     try os.posixWrite(sockfd, buffer);
 }
 
+fn base64Encode(data: []u8) void {
+    var b64_buf: [0x100000]u8 = undefined;
+    var encoded = b64_buf[0..std.base64.Base64Encoder.calcSize(data.len)];
+    std.base64.standard_encoder.encode(encoded, data);
+    std.debug.warn("b64 encoded: '{}'\n", encoded);
+}
+
 pub fn recvDNSPacket(
     sockfd: i32,
-    buffer: []u8,
     pkt: *DNSPacket,
 ) !void {
+    var buffer = try pkt.allocator.alloc(u8, 512);
+
     var byte_count = try os.posixRead(sockfd, buffer);
     if (byte_count == 0) return DNSError.NetError;
 
-    var in = io.SliceInStream.init(buffer);
+    var packet_slice = buffer[0..byte_count];
+
+    std.debug.warn("recv {} bytes for packet\n", byte_count);
+    base64Encode(packet_slice);
+
+    var in = io.SliceInStream.init(packet_slice);
     var in_stream = &in.stream;
     var deserializer = io.Deserializer(.Big, .Bit, InError).init(in_stream);
 

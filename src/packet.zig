@@ -326,7 +326,14 @@ pub const DNSPacket = struct {
     }
 
     pub fn deserialize(self: *DNSPacket, deserializer: var) !void {
-        self.header = try deserializer.deserialize(DNSHeader);
+        // assume id 0 is unitialized header
+        // and well, that DOES give us a 1 in 65535 chance of
+        // the library breaking.
+
+        // TODO: not rely on header id for header init-or-not
+        if (self.header.id == 0) {
+            self.header = try deserializer.deserialize(DNSHeader);
+        }
 
         // allocate the slices based on header data (WHEN DESERIALIZING).
         // when serializing or using addQuestion we do a realloc.

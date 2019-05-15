@@ -61,14 +61,10 @@ fn resolve(allocator: *Allocator, addr: std.net.Address, pkt: DNSPacket) !bool {
 
     var buf = try allocator.alloc(u8, pkt.size());
 
-    // TODO: better values here
-    var recvbuf = try allocator.alloc(u8, 0x10000);
-    std.mem.set(u8, recvbuf, 0);
+    try proto.sendDNSPacket(sockfd, pkt, buf);
 
     var recvpkt = try packet.DNSPacket.init(allocator);
-
-    try proto.sendDNSPacket(sockfd, pkt, buf);
-    try proto.recvDNSPacket(sockfd, recvbuf, &recvpkt);
+    try proto.recvDNSPacket(sockfd, &recvpkt);
 
     std.debug.warn("{}\n", recvpkt.as_str());
 
