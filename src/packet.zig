@@ -296,8 +296,9 @@ test "DNSPacket serialize/deserialize" {
 
 test "deserialization of original google.com/A" {
     var buf: [0x1000]u8 = undefined;
-    std.mem.copy(u8, &buf, GOOGLE_COM_A_PKT);
-    var pkt = try deserialTest(&buf);
+    var decoded = buf[0..try base64.standard_decoder.calcSize(GOOGLE_COM_A_PKT)];
+    try base64.standard_decoder.decode(decoded, GOOGLE_COM_A_PKT);
+    var pkt = try deserialTest(decoded);
     std.debug.warn("{}\n", pkt.as_str());
 }
 
