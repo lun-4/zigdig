@@ -231,15 +231,15 @@ pub const DNSPacket = struct {
     fn addQuestion(self: *DNSPacket, question: DNSQuestion) !void {
         // bump it by 1 and realloc the questions slice to handle the new
         // question
-        self.*.header.qdcount += 1;
-        self.*.questions = try self.allocator.realloc(
-            self.*.questions,
-            self.*.header.qdcount,
+        self.header.qdcount += 1;
+        self.questions = try self.allocator.realloc(
+            self.questions,
+            self.header.qdcount,
         );
 
         // TODO: shouldn't this be a copy of sorts? aren't we allocating
         // more than we should with this?
-        self.*.questions[self.*.header.qdcount - 1] = question;
+        self.questions[self.header.qdcount - 1] = question;
     }
 };
 
