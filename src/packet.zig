@@ -99,12 +99,15 @@ pub const DNSName = struct {
     }
 };
 
+/// Return the amount of elements as if they were split by `delim`.
 fn splitCount(comptime data: []const u8, comptime delim: u8) usize {
     var size: usize = 0;
 
     for (data) |byte| {
         if (byte == delim) size += 1;
     }
+
+    size += 1;
 
     return size;
 }
@@ -251,15 +254,17 @@ pub const DNSPacket = struct {
             var label_size = try deserializer.deserialize(u8);
             if (label_size == 0) break;
 
-            labels = try self.allocator.realloc(
-                labels,
-                labels_idx * label_size * @sizeOf(u8),
-            );
+            // allocate the new label and the new size of labels
+            labels = try self.allocator.realloc(labels, (labels_idx + 1));
+            var label = try self.allocator.alloc(u8, label_size);
+            labels[labels_idx] = label;
 
             var label_idx: usize = 0;
             while (label_idx < label_size) : (label_idx += 1) {
-                labels[labels_idx][label_idx] = try deserializer.deserialize(u8);
+                label[label_idx] = try deserializer.deserialize(u8);
             }
+
+            labels_idx += 1;
         }
 
         return DNSName{ .labels = labels };
