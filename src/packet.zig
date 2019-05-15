@@ -134,6 +134,16 @@ pub const DNSPacket = struct {
 
     pub fn serialize(self: DNSPacket, serializer: var) !void {
         try serializer.serialize(self.header);
+
+        for (self.questions) |question| {
+            try serializer.serialize(question.qname.len);
+            for (question.qname.value) |byte| {
+                try serializer.serialize(byte);
+            }
+
+            try serializer.serialize(question.qtype);
+            try serializer.serialize(question.qclass);
+        }
     }
 
     /// Deserializes a DNSName, which represents a length-prefixed slice of u8.
@@ -196,9 +206,9 @@ pub const DNSPacket = struct {
     fn allocSlice(
         self: *DNSPacket,
         comptime T: type,
-        size: usize,
+        num_elements: usize,
     ) ![]T {
-        return try self.allocator.alloc(T, size);
+        return try self.allocator.alloc(T, num_elements);
     }
 
     pub fn deserialize(self: *DNSPacket, deserializer: var) !void {
@@ -236,7 +246,7 @@ pub const DNSPacket = struct {
         try self.deserialResourceList(deserializer, "arcount", "additional");
     }
 
-    fn addQuestion(self: *DNSPacket, question: DNSQuestion) !void {
+    pub fn addQuestion(self: *DNSPacket, question: DNSQuestion) !void {
         // bump it by 1 and realloc the questions slice to handle the new
         // question
         self.header.qdcount += 1;
@@ -249,11 +259,33 @@ pub const DNSPacket = struct {
         // more than we should with this?
         self.questions[self.header.qdcount - 1] = question;
     }
+
+    fn sliceSizes(self: DNSPacket) usize {
+        var extra_size: usize = 0;
+
+        for (self.questions) |question| {
+            // add qname (which is DNSName, which is u8 + (value.len* u8))
+            extra_size += @sizeOf(u8);
+            extra_size += question.qname.len * @sizeOf(u8);
+
+            // add both qtype and qclass (both u16's)
+            extra_size += @sizeOf(u16);
+            extra_size += @sizeOf(u16);
+        }
+
+        // TODO: the DNSResource slice sizes
+
+        return extra_size;
+    }
+
+    /// Returns the size in bytes of the packet for (de)serialization purposes.
+    pub fn size(self: DNSPacket) usize {
+        return @sizeOf(DNSHeader) + self.sliceSizes();
+    }
 };
 
-fn serialTest(packet: DNSPacket) ![]u8 {
-    var main_buffer: [0x1000]u8 = undefined;
-    var buf = main_buffer[0..@sizeOf(DNSPacket)];
+fn serialTest(allocator: *Allocator, packet: DNSPacket) ![]u8 {
+    var buf = try allocator.alloc(u8, packet.size());
 
     var out = io.SliceOutStream.init(buf);
     var out_stream = &out.stream;
@@ -290,7 +322,7 @@ test "DNSPacket serialize/deserialize" {
 
     // then we'll serialize it under a buffer on the stack,
     // deserialize it, and the header.id should be equal to random_id
-    var buf = try serialTest(packet);
+    var buf = try serialTest(allocator, packet);
 
     // deserialize it
     var new_packet = try deserialTest(allocator, buf);
@@ -343,7 +375,7 @@ test "serialization of google.com/A" {
     };
 
     try pkt.addQuestion(question);
-    var out = try serialTest(pkt);
+    var out = try serialTest(allocator, pkt);
 
     var buffer: [0x10000]u8 = undefined;
     var encoded = buffer[0..base64.Base64Encoder.calcSize(out.len)];
