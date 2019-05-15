@@ -35,7 +35,7 @@ fn makeDNSPacket(
     qtype: []u8,
 ) !DNSPacket {
     var qtype_i = try fmt.parseInt(u8, qtype, 10);
-    var pkt = DNSPacket.init(allocator);
+    var pkt = try DNSPacket.init(allocator);
 
     var question = packet.DNSQuestion{
         .qname = packet.DNSName{

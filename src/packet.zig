@@ -91,23 +91,23 @@ pub const DNSPacket = struct {
     pub const Error = error{};
 
     pub header: DNSHeader,
-    pub questions: ?[]DNSQuestion,
-    pub answers: ?[]DNSResource,
-    pub authority: ?[]DNSResource,
-    pub additional: ?[]DNSResource,
+    pub questions: []DNSQuestion,
+    pub answers: []DNSResource,
+    pub authority: []DNSResource,
+    pub additional: []DNSResource,
 
     allocator: *Allocator,
 
     /// Caller owns the memory.
-    pub fn init(allocator: *Allocator) DNSPacket {
+    pub fn init(allocator: *Allocator) !DNSPacket {
         var self = DNSPacket{
             .header = DNSHeader.init(),
             .allocator = allocator,
 
-            .questions = null,
-            .answers = null,
-            .authority = null,
-            .additional = null,
+            .questions = try allocator.alloc(DNSQuestion, 0),
+            .answers = try allocator.alloc(DNSResource, 0),
+            .authority = try allocator.alloc(DNSResource, 0),
+            .additional = try allocator.alloc(DNSResource, 0),
         };
         return self;
     }
@@ -118,10 +118,10 @@ pub const DNSPacket = struct {
     }
 
     pub fn is_valid(self: *DNSPacket) bool {
-        return (self.questions.?.len == self.header.qdcount and
-            self.answers.?.len == self.header.ancount and
-            self.authority.?.len == self.header.nscount and
-            self.additional.?.len == self.header.arcount);
+        return (self.questions.len == self.header.qdcount and
+            self.answers.len == self.header.ancount and
+            self.authority.len == self.header.nscount and
+            self.additional.len == self.header.arcount);
     }
 
     pub fn serialize(self: DNSPacket, serializer: var) !void {
@@ -131,7 +131,7 @@ pub const DNSPacket = struct {
     /// Deserializes a DNSName, which represents a length-prefixed slice of u8.
     fn deserializeName(self: *DNSPacket, deserializer: var) !DNSName {
         var len = try deserializer.deserialize(u8);
-        var value = try self.*.allocator.alloc(u8, len);
+        var value = try self.allocator.alloc(u8, len);
 
         var i: usize = 0;
 
@@ -159,8 +159,7 @@ pub const DNSPacket = struct {
         var rs_list = @field(self.*, target_field);
 
         while (i < total) {
-            const optional_type = @typeOf(rs_list);
-            const list_type = @typeInfo(optional_type).Optional.child;
+            const list_type = @typeOf(rs_list);
             const list_info = @typeInfo(list_type).Pointer;
             const info = @typeInfo(list_info.child).Struct;
 
@@ -180,7 +179,7 @@ pub const DNSPacket = struct {
                     value = try deserializer.deserialize(fieldType);
                 }
 
-                @field(rs_list.?[i], name) = value;
+                @field(rs_list[i], name) = value;
             }
             i += 1;
         }
@@ -188,29 +187,27 @@ pub const DNSPacket = struct {
 
     fn allocSlice(
         self: *DNSPacket,
-        comptime field_name: []const u8,
         comptime T: type,
         size: usize,
-    ) !void {
-        @field(self.*, field_name) = try self.allocator.alloc(T, size);
+    ) ![]T {
+        return try self.allocator.alloc(T, size);
     }
 
     pub fn deserialize(self: *DNSPacket, deserializer: var) !void {
-        self.*.header = try deserializer.deserialize(DNSHeader);
+        self.header = try deserializer.deserialize(DNSHeader);
 
-        // allocate the slices based on header data
-        try self.allocSlice("questions", DNSQuestion, self.*.header.qdcount);
-        try self.allocSlice("answers", DNSResource, self.*.header.ancount);
-        try self.allocSlice("authority", DNSResource, self.*.header.nscount);
-        try self.allocSlice("additional", DNSResource, self.*.header.arcount);
+        // allocate the slices based on header data (WHEN DESERIALIZING).
+        // when serializing or using addQuestion we do a realloc.
+        self.questions = try self.allocSlice(DNSQuestion, self.header.qdcount);
+        self.answers = try self.allocSlice(DNSResource, self.header.ancount);
+        self.authority = try self.allocSlice(DNSResource, self.header.nscount);
+        self.additional = try self.allocSlice(DNSResource, self.header.arcount);
 
         // deserialize our questions, but since they contain DNSName,
         // the deserialization is messier than what it should be..
 
         var i: usize = 0;
-        while (i < self.*.header.qdcount) {
-            i += 1;
-
+        while (i < self.header.qdcount) {
             // question contains {name, qtype, qclass}
             var name = try self.deserializeName(deserializer);
             var qtype = try deserializer.deserialize(u16);
@@ -222,7 +219,8 @@ pub const DNSPacket = struct {
                 .qclass = qclass,
             };
 
-            self.*.questions.?[i] = question;
+            self.questions[i] = question;
+            i += 1;
         }
 
         try self.deserialResourceList(deserializer, "ancount", "answers");
@@ -234,20 +232,14 @@ pub const DNSPacket = struct {
         // bump it by 1 and realloc the questions slice to handle the new
         // question
         self.*.header.qdcount += 1;
-        if (self.*.questions) |questions| {
-            self.*.questions = try self.allocator.realloc(
-                questions,
-                self.*.header.qdcount,
-            );
+        self.*.questions = try self.allocator.realloc(
+            self.*.questions,
+            self.*.header.qdcount,
+        );
 
-            // TODO: shouldn't this be a copy of sorts? aren't we allocating
-            // more than we should with this?
-            questions[self.*.header.qdcount - 1] = question;
-        } else {
-            // starting case where we need to allocate the question slice
-            self.*.questions = try self.allocator.alloc(DNSQuestion, 1);
-            self.*.questions.?[0] = question;
-        }
+        // TODO: shouldn't this be a copy of sorts? aren't we allocating
+        // more than we should with this?
+        self.*.questions[self.*.header.qdcount - 1] = question;
     }
 };
 
@@ -262,11 +254,13 @@ fn serialTest(packet: DNSPacket) ![]u8 {
     return buf[0..];
 }
 
-fn deserialTest(buf: []u8) !DNSPacket {
-    var in = io.SliceInStream.init(buf[0..]);
+fn deserialTest(allocator: *Allocator, buf: []u8) !DNSPacket {
+    var in = io.SliceInStream.init(buf);
     var in_stream = &in.stream;
     var deserializer = io.Deserializer(.Big, .Bit, InError).init(in_stream);
-    return try deserializer.deserialize(DNSPacket);
+    var pkt = try DNSPacket.init(allocator);
+    try deserializer.deserializeInto(&pkt);
+    return pkt;
 }
 
 const GOOGLE_COM_A_PKT = "dKwBIAABAAAAAAABBmdvb2dsZQNjb20AAAEAAQAAKRAAAAAAAAAMAAoACMNmC6Uunlys";
@@ -275,10 +269,10 @@ test "DNSPacket serialize/deserialize" {
     // setup a random id packet
     var da = std.heap.DirectAllocator.init();
     var arena = std.heap.ArenaAllocator.init(&da.allocator);
-    errdefer arena.deinit();
+    defer arena.deinit();
     const allocator = &arena.allocator;
 
-    var packet = DNSPacket.init(allocator);
+    var packet = try DNSPacket.init(allocator);
 
     var r = rand.DefaultPrng.init(os.time.timestamp());
     const random_id = r.random.int(u16);
@@ -289,17 +283,27 @@ test "DNSPacket serialize/deserialize" {
     var buf = try serialTest(packet);
 
     // deserialize it
-    var new_packet = try deserialTest(buf);
+    var new_packet = try deserialTest(allocator, buf);
 
     testing.expectEqual(new_packet.header.id, packet.header.id);
 }
 
 test "deserialization of original google.com/A" {
+    var da = std.heap.DirectAllocator.init();
+    var arena = std.heap.ArenaAllocator.init(&da.allocator);
+    errdefer arena.deinit();
+    const allocator = &arena.allocator;
+
     var buf: [0x1000]u8 = undefined;
     var decoded = buf[0..try base64.standard_decoder.calcSize(GOOGLE_COM_A_PKT)];
     try base64.standard_decoder.decode(decoded, GOOGLE_COM_A_PKT);
-    var pkt = try deserialTest(decoded);
-    std.debug.warn("{}\n", pkt.as_str());
+    var pkt = try deserialTest(allocator, decoded);
+
+    std.debug.assert(pkt.header.id == 29868);
+    std.debug.assert(pkt.header.qdcount == 1);
+    std.debug.assert(pkt.header.ancount == 0);
+    std.debug.assert(pkt.header.nscount == 0);
+    std.debug.assert(pkt.header.arcount == 1);
 }
 
 test "serialization of google.com/A" {
@@ -309,7 +313,7 @@ test "serialization of google.com/A" {
     errdefer arena.deinit();
     const allocator = &arena.allocator;
 
-    var pkt = DNSPacket.init(allocator);
+    var pkt = try DNSPacket.init(allocator);
     var question = DNSQuestion{
         .qname = DNSName{
             .len = 10,
@@ -323,7 +327,7 @@ test "serialization of google.com/A" {
     try pkt.addQuestion(question);
     var out = try serialTest(pkt);
 
-    var buffer: [0x1000]u8 = undefined;
+    var buffer: [0x10000]u8 = undefined;
     var encoded = buffer[0..base64.Base64Encoder.calcSize(out.len)];
     base64.standard_encoder.encode(encoded, out);
 
