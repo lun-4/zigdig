@@ -11,6 +11,15 @@ const Allocator = std.mem.Allocator;
 const OutError = io.SliceOutStream.Error;
 const InError = io.SliceInStream.Error;
 
+pub const DNSPacketRCode = enum(u4) {
+    NoError = 0,
+    FmtError,
+    ServFail,
+    NameErr,
+    NotImpl,
+    Refused,
+};
+
 pub const DNSHeader = packed struct {
     id: u16,
     qr_flag: bool,
@@ -81,17 +90,23 @@ pub const DNSQuestion = struct {
     pub qclass: u16,
 };
 
+pub const DNSRData = struct {
+    len: u16,
+    value: []u8,
+};
+
 pub const DNSResource = struct {
     name: DNSName,
 
     rr_type: u16,
     class: u16,
     ttl: u32,
-    rdlength: u16,
 
-    // it uses the same length-prefix as actual dns names.
-    // we can try redeserializing via SliceOutStream
-    rdata: DNSName,
+    // NOTE: this is DIFFERENT from DNSName due to rdlength being an u16,
+    // instead of an u8.
+    // NOTE: maybe we re-deserialize this one specifically on
+    // another section of the source dedicated to specific RDATA
+    rdata: DNSRData,
 };
 
 pub const DNSPacket = struct {
@@ -135,6 +150,8 @@ pub const DNSPacket = struct {
     pub fn serialize(self: DNSPacket, serializer: var) !void {
         try serializer.serialize(self.header);
 
+        // TODO: for now, we're only serializing our questions due to this
+        // being a client library, not a server library.
         for (self.questions) |question| {
             try serializer.serialize(question.qname.len);
             for (question.qname.value) |byte| {
@@ -146,22 +163,33 @@ pub const DNSPacket = struct {
         }
     }
 
-    /// Deserializes a DNSName, which represents a length-prefixed slice of u8.
-    fn deserializeName(self: *DNSPacket, deserializer: var) !DNSName {
-        var len = try deserializer.deserialize(u8);
+    fn deserializeLengthPrefix(
+        self: *DNSPacket,
+        comptime T: type,
+        comptime V: type,
+        deserializer: var,
+    ) !V {
+        var len = try deserializer.deserialize(T);
         var value = try self.allocator.alloc(u8, len);
 
         var i: usize = 0;
-
-        while (i < len) {
+        while (i < len) : (i += 1) {
             value[i] = try deserializer.deserialize(u8);
-            i += 1;
         }
 
-        return DNSName{
+        return V{
             .len = len,
             .value = value,
         };
+    }
+
+    /// Deserializes a DNSName, which represents a length-prefixed slice of u8.
+    fn deserializeName(self: *DNSPacket, deserializer: var) !DNSName {
+        return try self.deserializeLengthPrefix(u8, DNSName, deserializer);
+    }
+
+    fn deserializeRData(self: *DNSPacket, deserializer: var) !DNSRData {
+        return try self.deserializeLengthPrefix(u16, DNSRData, deserializer);
     }
 
     /// Deserialize a list of DNSResource which sizes are controlled by the
@@ -193,6 +221,8 @@ pub const DNSPacket = struct {
                 // which means its not deserializable BY DEFAULT.
                 if (fieldType == DNSName) {
                     value = try self.deserializeName(deserializer);
+                } else if (fieldType == DNSRData) {
+                    value = try self.deserializeRData(deserializer);
                 } else {
                     value = try deserializer.deserialize(fieldType);
                 }
@@ -272,8 +302,8 @@ pub const DNSPacket = struct {
         res_size += @sizeOf(u32);
 
         // rdata
-        res_size += @sizeOf(u8);
-        res_size += resource.name.len * @sizeOf(u8);
+        res_size += @sizeOf(u16);
+        res_size += resource.rdata.len * @sizeOf(u8);
 
         return res_size;
     }

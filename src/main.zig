@@ -7,12 +7,52 @@ const proto = @import("proto.zig");
 const resolv = @import("resolvconf.zig");
 
 const DNSPacket = packet.DNSPacket;
+const DNSPacketRCode = packet.DNSPacketRCode;
 const Allocator = std.mem.Allocator;
+
+const DNSError = error{
+    UnknownReplyId,
+    GotQuestion,
+    RCodeErr,
+};
 
 test "zigdig" {
     _ = @import("packet.zig");
     _ = @import("proto.zig");
     _ = @import("resolvconf.zig");
+}
+
+fn printPacket(pkt: DNSPacket) void {
+    std.debug.warn(
+        "ID={} OPCODE={} RCODE={}",
+        pkt.header.id,
+        pkt.header.opcode,
+        pkt.header.rcode,
+    );
+
+    std.debug.warn(
+        "QDCOUNT={} ANCOUNT={} NSCOUNT={} ARCOUNT={}",
+        pkt.header.qdcount,
+        pkt.header.ancount,
+        pkt.header.nscount,
+        pkt.header.arcount,
+    );
+
+    if (pkt.header.ancount > 0) {
+        std.debug.warn(";;ANSWER SECTION\n");
+
+        for (pkt.answers) |answer| {
+            // TODO: convert rr_type to better []u8 representation, same for
+            // class (IN and A, and etc)
+            std.debug.warn(
+                "{} {} {} {}\n",
+                answer.name.value,
+                answer.ttl,
+                answer.class,
+                answer.rr_type,
+            );
+        }
+    }
 }
 
 fn resolve(allocator: *Allocator, addr: std.net.Address, pkt: DNSPacket) !bool {
@@ -27,11 +67,30 @@ fn resolve(allocator: *Allocator, addr: std.net.Address, pkt: DNSPacket) !bool {
 
     try proto.sendDNSPacket(sockfd, pkt, buf);
     try proto.recvDNSPacket(sockfd, recvbuf, &recvpkt);
+
     std.debug.warn("{}\n", recvpkt.as_str());
 
-    // TODO: complete, check errors, etc
+    // safety checks against unknown udp replies on the same socket
+    if (recvpkt.header.id != pkt.header.id) return DNSError.UnknownReplyId;
+    if (!recvpkt.header.qr_flag) return DNSError.GotQuestion;
 
-    return true;
+    // TODO: nicer error handling, with a nice print n stuff
+    switch (@intToEnum(DNSPacketRCode, recvpkt.header.rcode)) {
+        DNSPacketRCode.NoError => {
+            printPacket(recvpkt);
+            return true;
+        },
+        DNSPacketRCode.ServFail => {
+            // if SERVFAIL, the resolver should push to the next one.
+            return false;
+        },
+        DNSPacketRCode.NotImpl, DNSPacketRCode.Refused, DNSPacketRCode.FmtError, DNSPacketRCode.NameErr => {
+            var val = @intToEnum(DNSPacketRCode, recvpkt.header.rcode);
+            std.debug.warn("{}\n", val);
+            return DNSError.RCodeErr;
+        },
+        else => unreachable,
+    }
 }
 
 fn makeDNSPacket(
@@ -107,4 +166,6 @@ pub fn main() anyerror!void {
 
         if (try resolve(allocator, addr, pkt)) break;
     }
+
+    std.debug.warn("OK\n");
 }

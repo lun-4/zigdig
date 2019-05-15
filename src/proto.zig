@@ -42,7 +42,6 @@ pub fn recvDNSPacket(
     pkt: *DNSPacket,
 ) !void {
     var byte_count = try os.posixRead(sockfd, buffer);
-    std.debug.warn("bcount: {}\n", byte_count);
     if (byte_count == 0) return DNSError.NetError;
 
     var in = io.SliceInStream.init(buffer);
