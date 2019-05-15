@@ -393,6 +393,8 @@ test "deserialization of original google.com/A" {
     try base64.standard_decoder.decode(decoded, GOOGLE_COM_A_PKT);
     var pkt = try deserialTest(allocator, decoded);
 
+    std.debug.warn("{}\n", pkt.header.as_str());
+
     std.debug.assert(pkt.header.id == 5189);
     std.debug.assert(pkt.header.qdcount == 1);
     std.debug.assert(pkt.header.ancount == 0);
@@ -411,10 +413,6 @@ test "serialization of google.com/A" {
     pkt.header.id = 5189;
     pkt.header.rd = true;
     pkt.header.z = 2;
-
-    // we don't have any additionals but we need to match
-    // the base64 stuff
-    pkt.header.arcount = 1;
 
     var question = DNSQuestion{
         .qname = DNSName{
