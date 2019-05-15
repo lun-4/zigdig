@@ -52,8 +52,16 @@ pub const DNSHeader = packed struct {
         var buf: [1024]u8 = undefined;
         return fmt.bufPrint(
             &buf,
-            "DNSHeader<id={},qd={},an={},ns={},ar={}>",
+            "DNSHeader<{},{},{},{},{},{},{},{},{},{},{},{},{}>",
             self.id,
+            self.qr_flag,
+            self.opcode,
+            self.aa_flag,
+            self.tc,
+            self.rd,
+            self.ra,
+            self.z,
+            self.rcode,
             self.qdcount,
             self.ancount,
             self.nscount,
@@ -244,14 +252,16 @@ pub const DNSPacket = struct {
 };
 
 fn serialTest(packet: DNSPacket) ![]u8 {
-    var buf: [0x1000]u8 = undefined;
-    var out = io.SliceOutStream.init(buf[0..]);
+    var main_buffer: [0x1000]u8 = undefined;
+    var buf = main_buffer[0..@sizeOf(DNSPacket)];
+
+    var out = io.SliceOutStream.init(buf);
     var out_stream = &out.stream;
     var serializer = io.Serializer(.Big, .Bit, OutError).init(out_stream);
 
     try serializer.serialize(packet);
     try serializer.flush();
-    return buf[0..];
+    return buf;
 }
 
 fn deserialTest(allocator: *Allocator, buf: []u8) !DNSPacket {
@@ -314,6 +324,14 @@ test "serialization of google.com/A" {
     const allocator = &arena.allocator;
 
     var pkt = try DNSPacket.init(allocator);
+    pkt.header.id = 29868;
+    pkt.header.rd = true;
+    pkt.header.z = 2;
+
+    // we don't have any additionals but we need to match
+    // the base64 stuff
+    pkt.header.arcount = 1;
+
     var question = DNSQuestion{
         .qname = DNSName{
             .len = 10,
@@ -330,6 +348,8 @@ test "serialization of google.com/A" {
     var buffer: [0x10000]u8 = undefined;
     var encoded = buffer[0..base64.Base64Encoder.calcSize(out.len)];
     base64.standard_encoder.encode(encoded, out);
+
+    std.debug.warn("'{}' '{}'", encoded, GOOGLE_COM_A_PKT);
 
     testing.expectEqualSlices(u8, encoded, GOOGLE_COM_A_PKT);
 }
