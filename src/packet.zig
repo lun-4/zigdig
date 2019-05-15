@@ -97,7 +97,7 @@ pub const DNSName = struct {
 };
 
 /// Return the amount of elements as if they were split by `delim`.
-fn splitCount(comptime data: []const u8, comptime delim: u8) usize {
+fn splitCount(data: []const u8, delim: u8) usize {
     var size: usize = 0;
 
     for (data) |byte| {
@@ -109,28 +109,36 @@ fn splitCount(comptime data: []const u8, comptime delim: u8) usize {
     return size;
 }
 
-/// Get a DNSName out of a domain name. This is a comptime operation.
-pub fn toDNSName(comptime domain: []const u8) DNSName {
-    comptime {
-        std.debug.assert(domain.len <= 255);
-        var period_count = splitCount(domain, '.');
-        var labels: [period_count][]const u8 = undefined;
+/// Get a DNSName out of a domain name.
+pub fn toDNSName(allocator: *Allocator, domain: []const u8) !DNSName {
+    std.debug.assert(domain.len <= 255);
 
-        var it = std.mem.separate(domain, ".");
-        var labels_idx: usize = 0;
+    var period_count = splitCount(domain, '.');
+    var labels: [][]const u8 = try allocator.alloc([]u8, period_count);
 
-        inline while (labels_idx < period_count) : (labels_idx += 1) {
-            var label = it.next().?;
-            labels[labels_idx] = label;
-        }
+    var it = std.mem.separate(domain, ".");
+    var labels_idx: usize = 0;
 
-        return DNSName{ .labels = labels[0..] };
+    while (labels_idx < period_count) : (labels_idx += 1) {
+        var label = it.next().?;
+        labels[labels_idx] = label;
     }
+
+    return DNSName{ .labels = labels[0..] };
+}
+
+pub fn nameToStr(allocator: *Allocator, name: DNSName) ![]u8 {
+    return try std.mem.join(allocator, ".", name.labels);
 }
 
 test "toDNSName" {
+    var da = std.heap.DirectAllocator.init();
+    var arena = std.heap.ArenaAllocator.init(&da.allocator);
+    errdefer arena.deinit();
+    const allocator = &arena.allocator;
+
     const domain = "www.google.com";
-    var name = toDNSName(domain[0..]);
+    var name = try toDNSName(allocator, domain[0..]);
     std.debug.assert(name.labels.len == 3);
     testing.expect(std.mem.eql(u8, name.labels[0], "www"));
     testing.expect(std.mem.eql(u8, name.labels[1], "google"));
@@ -172,7 +180,7 @@ pub const DNSPacket = struct {
     pub authority: []DNSResource,
     pub additional: []DNSResource,
 
-    allocator: *Allocator,
+    pub allocator: *Allocator,
 
     /// Caller owns the memory.
     pub fn init(allocator: *Allocator) !DNSPacket {
@@ -252,18 +260,29 @@ pub const DNSPacket = struct {
             var label_size = try deserializer.deserialize(u8);
             if (label_size == 0) break;
 
+            std.debug.warn("deserializing {} byte label\n", label_size);
+
             // allocate the new label and the new size of labels
             labels = try self.allocator.realloc(labels, (labels_idx + 1));
             var label = try self.allocator.alloc(u8, label_size);
+
+            // equaling here will just assign the newly created slice
+            // to our array of slices
             labels[labels_idx] = label;
 
+            // properly deserialize the slice
             var label_idx: usize = 0;
             while (label_idx < label_size) : (label_idx += 1) {
                 label[label_idx] = try deserializer.deserialize(u8);
+                std.debug.warn("label[{}] = {} ", label_idx, label[label_idx]);
             }
+
+            std.debug.warn("deserialized full label '{}'\n", label);
 
             labels_idx += 1;
         }
+
+        std.debug.warn("finished labels for a DNSName\n");
 
         return DNSName{ .labels = labels };
     }
@@ -280,36 +299,22 @@ pub const DNSPacket = struct {
         comptime header_field: []const u8,
         comptime target_field: []const u8,
     ) !void {
+        std.debug.warn("deserial rslist {} {}\n", header_field, target_field);
+
         var i: usize = 0;
         var total = @field(self.*.header, header_field);
         var rs_list = @field(self.*, target_field);
 
-        while (i < total) {
-            const list_type = @typeOf(rs_list);
-            const list_info = @typeInfo(list_type).Pointer;
-            const info = @typeInfo(list_info.child).Struct;
+        std.debug.warn("total={} rs_list={}\n", total, rs_list.ptr);
 
-            //@compileLog(info.fields);
-
-            inline for (info.fields) |field_info| {
-                const name = field_info.name;
-                const fieldType = field_info.field_type;
-                var value: fieldType = undefined;
-
-                // deserializing DNSNames involves allocating a
-                // runtime-known string, which means its a pointer,
-                // which means its not deserializable BY DEFAULT.
-                if (fieldType == DNSName) {
-                    value = try self.deserializeName(deserializer);
-                } else if (fieldType == DNSRData) {
-                    value = try self.deserializeRData(deserializer);
-                } else {
-                    value = try deserializer.deserialize(fieldType);
-                }
-
-                @field(rs_list[i], name) = value;
-            }
-            i += 1;
+        while (i < total) : (i += 1) {
+            rs_list[i] = DNSResource{
+                .name = try self.deserializeName(deserializer),
+                .rr_type = try deserializer.deserialize(u16),
+                .class = try deserializer.deserialize(u16),
+                .ttl = try deserializer.deserialize(u32),
+                .rdata = try self.deserializeRData(deserializer),
+            };
         }
     }
 
@@ -493,7 +498,7 @@ test "serialization of google.com/A" {
     pkt.header.rd = true;
     pkt.header.z = 2;
 
-    var qname = toDNSName("google.com");
+    var qname = try toDNSName(allocator, "google.com");
 
     var question = DNSQuestion{
         .qname = qname,
