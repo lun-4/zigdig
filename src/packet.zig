@@ -92,9 +92,6 @@ pub const DNSName = struct {
             size += label.len * @sizeOf(u8);
         }
 
-        // include null octet
-        size += @sizeOf(u8);
-
         return size;
     }
 };
@@ -475,13 +472,13 @@ test "deserialization of original google.com/A" {
     try base64.standard_decoder.decode(decoded, GOOGLE_COM_A_PKT);
     var pkt = try deserialTest(allocator, decoded);
 
-    std.debug.warn("{}\n", pkt.header.as_str());
-
     std.debug.assert(pkt.header.id == 5189);
     std.debug.assert(pkt.header.qdcount == 1);
     std.debug.assert(pkt.header.ancount == 0);
     std.debug.assert(pkt.header.nscount == 0);
     std.debug.assert(pkt.header.arcount == 0);
+
+    // TODO: assert values of question slice
 }
 
 test "serialization of google.com/A" {
@@ -510,8 +507,6 @@ test "serialization of google.com/A" {
     var buffer: [0x10000]u8 = undefined;
     var encoded = buffer[0..base64.Base64Encoder.calcSize(out.len)];
     base64.standard_encoder.encode(encoded, out);
-
-    std.debug.warn("'{}' '{}'", encoded, GOOGLE_COM_A_PKT);
 
     testing.expectEqualSlices(u8, encoded, GOOGLE_COM_A_PKT);
 }
