@@ -251,6 +251,26 @@ pub const DNSPacket = struct {
     }
 };
 
+fn serialTest(packet: DNSPacket) ![]u8 {
+    var buf: [0x1000]u8 = undefined;
+    var out = io.SliceOutStream.init(buf[0..]);
+    var out_stream = &out.stream;
+    var serializer = io.Serializer(.Big, .Bit, OutError).init(out_stream);
+
+    try serializer.serialize(packet);
+    try serializer.flush();
+    return buf[0..];
+}
+
+fn deserialTest(buf: []u8) !DNSPacket {
+    var in = io.SliceInStream.init(buf[0..]);
+    var in_stream = &in.stream;
+    var deserializer = io.Deserializer(.Big, .Bit, InError).init(in_stream);
+    return try deserializer.deserialize(DNSPacket);
+}
+
+const GOOGLE_COM_A_PKT = "dKwBIAABAAAAAAABBmdvb2dsZQNjb20AAAEAAQAAKRAAAAAAAAAMAAoACMNmC6Uunlys";
+
 test "DNSPacket serialize/deserialize" {
     // setup a random id packet
     var da = std.heap.DirectAllocator.init();
@@ -266,33 +286,19 @@ test "DNSPacket serialize/deserialize" {
 
     // then we'll serialize it under a buffer on the stack,
     // deserialize it, and the header.id should be equal to random_id
-
-    var buf: [1024]u8 = undefined;
-    var out = io.SliceOutStream.init(buf[0..]);
-    var out_stream = &out.stream;
-    var serializer = io.Serializer(.Big, .Bit, OutError).init(out_stream);
-
-    try serializer.serialize(packet);
-    try serializer.flush();
+    var buf = try serialTest(packet);
 
     // deserialize it
-    var in = io.SliceInStream.init(buf[0..]);
-    var in_stream = &in.stream;
-    var deserializer = io.Deserializer(.Big, .Bit, InError).init(in_stream);
-    var new_packet = try deserializer.deserialize(DNSPacket);
+    var new_packet = try deserialTest(buf);
 
     testing.expectEqual(new_packet.header.id, packet.header.id);
 }
 
-fn serial(packet: DNSPacket) ![]u8 {
-    var buf: [1024]u8 = undefined;
-    var out = io.SliceOutStream.init(buf[0..]);
-    var out_stream = &out.stream;
-    var serializer = io.Serializer(.Big, .Bit, OutError).init(out_stream);
-
-    try serializer.serialize(packet);
-    try serializer.flush();
-    return buf[0..];
+test "deserialization of original google.com/A" {
+    var buf: [0x1000]u8 = undefined;
+    std.mem.copy(u8, &buf, GOOGLE_COM_A_PKT);
+    var pkt = try deserialTest(&buf);
+    std.debug.warn("{}\n", pkt.as_str());
 }
 
 test "serialization of google.com/A" {
@@ -314,15 +320,11 @@ test "serialization of google.com/A" {
     };
 
     try pkt.addQuestion(question);
-    var out = try serial(pkt);
+    var out = try serialTest(pkt);
 
     var buffer: [0x1000]u8 = undefined;
     var encoded = buffer[0..base64.Base64Encoder.calcSize(out.len)];
     base64.standard_encoder.encode(encoded, out);
 
-    testing.expectEqualSlices(
-        u8,
-        encoded,
-        "dKwBIAABAAAAAAABBmdvb2dsZQNjb20AAAEAAQAAKRAAAAAAAAAMAAoACMNmC6Uunlys",
-    );
+    testing.expectEqualSlices(u8, encoded, GOOGLE_COM_A_PKT);
 }
