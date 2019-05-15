@@ -356,7 +356,8 @@ fn deserialTest(allocator: *Allocator, buf: []u8) !DNSPacket {
     return pkt;
 }
 
-const GOOGLE_COM_A_PKT = "dKwBIAABAAAAAAABBmdvb2dsZQNjb20AAAEAAQAAKRAAAAAAAAAMAAoACMNmC6Uunlys";
+// extracted with 'dig google.com a +noedns'
+const GOOGLE_COM_A_PKT = "FEUBIAABAAAAAAAABmdvb2dsZQNjb20AAAEAAQ==";
 
 test "DNSPacket serialize/deserialize" {
     // setup a random id packet
@@ -392,11 +393,11 @@ test "deserialization of original google.com/A" {
     try base64.standard_decoder.decode(decoded, GOOGLE_COM_A_PKT);
     var pkt = try deserialTest(allocator, decoded);
 
-    std.debug.assert(pkt.header.id == 29868);
+    std.debug.assert(pkt.header.id == 5189);
     std.debug.assert(pkt.header.qdcount == 1);
     std.debug.assert(pkt.header.ancount == 0);
     std.debug.assert(pkt.header.nscount == 0);
-    std.debug.assert(pkt.header.arcount == 1);
+    std.debug.assert(pkt.header.arcount == 0);
 }
 
 test "serialization of google.com/A" {
@@ -407,7 +408,7 @@ test "serialization of google.com/A" {
     const allocator = &arena.allocator;
 
     var pkt = try DNSPacket.init(allocator);
-    pkt.header.id = 29868;
+    pkt.header.id = 5189;
     pkt.header.rd = true;
     pkt.header.z = 2;
 
