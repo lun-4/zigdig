@@ -246,6 +246,30 @@ pub const DNSPacket = struct {
         }
     }
 
+    fn simpleDeserializeName(self: *DNSPacket, deserializer: var) ![][]const u8 {
+        // TODO: this is mostly copied code off deserializeName.
+        var labels: [][]u8 = try self.allocator.alloc([]u8, 0);
+        var labels_idx: usize = 0;
+
+        while (true) {
+            var label_size = try deserializer.deserialize(u8);
+            if (label_size == 0) break;
+
+            labels = try self.allocator.realloc(labels, labels_idx + 1);
+            var label = try self.allocator.alloc(u8, label_size);
+
+            // properly deserialize the slice
+            var label_idx: usize = 0;
+            while (label_idx < label_size) : (label_idx += 1) {
+                label[label_idx] = try deserializer.deserialize(u8);
+            }
+
+            labels[labels_idx] = label;
+            labels_idx += 1;
+        }
+        return labels;
+    }
+
     fn deserializePointer(
         self: *DNSPacket,
         ptr_offset_1: u8,
@@ -258,12 +282,6 @@ pub const DNSPacket = struct {
         // to do too many complicated things.
         var ptr_offset_2 = try deserializer.deserialize(u8);
 
-        std.debug.warn(
-            "offset 1: {}\noffset 2: {}\n",
-            ptr_offset_1,
-            ptr_offset_2,
-        );
-
         // merge them together
         var ptr_offset: u16 = (ptr_offset_1 << 7) | ptr_offset_2;
 
@@ -272,9 +290,29 @@ pub const DNSPacket = struct {
         ptr_offset &= ~u16(1 << 15);
         ptr_offset &= ~u16(1 << 14);
 
-        std.debug.warn("offset: {}\n", ptr_offset);
+        // we need to make a proper [][]const u8 which means
+        // re-deserializing labels but using start_slice instead
+        // and since we don't really wish for recursion to occour, we'll
+        // write a simpler version of deserializeName that doesn't
+        // handle pointers.
+        var offset_size_opt = std.mem.indexOf(u8, self.raw_bytes[ptr_offset..], "\x00");
 
-        unreachable;
+        if (offset_size_opt) |offset_size| {
+            var start_slice = self.raw_bytes[ptr_offset .. ptr_offset + (offset_size + 1)];
+
+            var in = io.SliceInStream.init(start_slice);
+            var in_stream = &in.stream;
+            var new_deserializer = io.Deserializer(
+                .Big,
+                .Bit,
+                InError,
+            ).init(in_stream);
+
+            return try self.simpleDeserializeName(&new_deserializer);
+        } else {
+            // TODO: add ParseErr
+            unreachable;
+        }
     }
 
     fn deserializeLabel(self: *DNSPacket, deserializer: var) !?LabelComponent {
@@ -297,10 +335,8 @@ pub const DNSPacket = struct {
             var label_idx: usize = 0;
             while (label_idx < ptr_prefix) : (label_idx += 1) {
                 label[label_idx] = try deserializer.deserialize(u8);
-                std.debug.warn("label[{}] = {} ", label_idx, label[label_idx]);
             }
 
-            std.debug.warn("\ndeserialized full label '{}'\n", label);
             return LabelComponent{ .Label = label };
         }
 
@@ -338,8 +374,6 @@ pub const DNSPacket = struct {
             labels_idx += 1;
         }
 
-        std.debug.warn("finished labels for a DNSName\n");
-
         return DNSName{ .labels = labels };
     }
 
@@ -348,11 +382,8 @@ pub const DNSPacket = struct {
         var rdata = try self.allocator.alloc(u8, rdlength);
         var i: u16 = 0;
 
-        std.debug.warn("deserializing rdata: {} bytes\n", rdlength);
-
         while (i < rdlength) : (i += 1) {
             rdata[i] = try deserializer.deserialize(u8);
-            std.debug.warn("rdata[{}] = {} ", i, rdata[i]);
         }
 
         return DNSRData{ .len = rdlength, .value = rdata };
@@ -366,13 +397,9 @@ pub const DNSPacket = struct {
         comptime header_field: []const u8,
         comptime target_field: []const u8,
     ) !void {
-        std.debug.warn("deserial rslist {} {}\n", header_field, target_field);
-
         var i: usize = 0;
         var total = @field(self.*.header, header_field);
         var rs_list = @field(self.*, target_field);
-
-        std.debug.warn("total={} rs_list={}\n", total, rs_list.ptr);
 
         while (i < total) : (i += 1) {
             var name = try self.deserializeName(deserializer);
