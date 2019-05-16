@@ -240,6 +240,7 @@ pub const DNSPacket = struct {
         // check if label is a pointer, this byte will contain 11 as the starting
         // point of it
         var ptr_prefix = try deserializer.deserialize(u8);
+        if (ptr_prefix == 0) return null;
 
         // TODO: merge ptr_prefix with label_size
 
@@ -265,7 +266,7 @@ pub const DNSPacket = struct {
                 std.debug.warn("label[{}] = {} ", label_idx, label[label_idx]);
             }
 
-            std.debug.warn("deserialized full label '{}'\n", label);
+            std.debug.warn("\ndeserialized full label '{}'\n", label);
             return label;
         }
 
