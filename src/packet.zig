@@ -170,6 +170,16 @@ pub const DNSResource = struct {
     rdata: DNSRData,
 };
 
+const LabelComponentTag = enum {
+    Pointer,
+    Label,
+};
+
+const LabelComponent = union(LabelComponentTag) {
+    Pointer: [][]const u8,
+    Label: []u8,
+};
+
 pub const DNSPacket = struct {
     const Self = @This();
     pub const Error = error{};
@@ -240,7 +250,7 @@ pub const DNSPacket = struct {
         self: *DNSPacket,
         ptr_offset_1: u8,
         deserializer: var,
-    ) ![]u8 {
+    ) ![][]const u8 {
         // we need to read another u8 and merge both ptr_prefix_1 and the
         // u8 we read into an u16
 
@@ -267,7 +277,7 @@ pub const DNSPacket = struct {
         unreachable;
     }
 
-    fn deserializeLabel(self: *DNSPacket, deserializer: var) !?[]u8 {
+    fn deserializeLabel(self: *DNSPacket, deserializer: var) !?LabelComponent {
         // check if label is a pointer, this byte will contain 11 as the starting
         // point of it
         var ptr_prefix = try deserializer.deserialize(u8);
@@ -277,7 +287,8 @@ pub const DNSPacket = struct {
         var bit2 = (ptr_prefix & (1 << 6)) != 0;
 
         if (bit1 and bit2) {
-            return try self.deserializePointer(ptr_prefix, deserializer);
+            var labels = try self.deserializePointer(ptr_prefix, deserializer);
+            return LabelComponent{ .Pointer = labels };
         } else {
             // the ptr_prefix is currently encoding the label's size
             var label = try self.allocator.alloc(u8, ptr_prefix);
@@ -290,7 +301,7 @@ pub const DNSPacket = struct {
             }
 
             std.debug.warn("\ndeserialized full label '{}'\n", label);
-            return label;
+            return LabelComponent{ .Label = label };
         }
 
         return null;
@@ -306,9 +317,20 @@ pub const DNSPacket = struct {
             var label = try self.deserializeLabel(deserializer);
 
             if (label) |denulled_label| {
-                // allocate the new label and the new size of labels
                 labels = try self.allocator.realloc(labels, (labels_idx + 1));
-                labels[labels_idx] = denulled_label;
+
+                switch (denulled_label) {
+                    .Pointer => |label_ptr| {
+                        if (labels_idx == 0) {
+                            return DNSName{ .labels = label_ptr };
+                        } else {
+                            // TODO: merge given label_ptr with existing labels
+                            unreachable;
+                        }
+                    },
+                    .Label => |label_val| labels[labels_idx] = label_val,
+                    else => unreachable,
+                }
             } else {
                 break;
             }
