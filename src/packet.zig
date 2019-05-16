@@ -236,25 +236,48 @@ pub const DNSPacket = struct {
         }
     }
 
+    fn deserializePointer(
+        self: *DNSPacket,
+        ptr_offset_1: u8,
+        deserializer: var,
+    ) ![]u8 {
+        // we need to read another u8 and merge both ptr_prefix_1 and the
+        // u8 we read into an u16
+
+        // the final offset is u14, but we keep it as u16 to prevent having
+        // to do too many complicated things.
+        var ptr_offset_2 = try deserializer.deserialize(u8);
+
+        std.debug.warn(
+            "offset 1: {}\noffset 2: {}\n",
+            ptr_offset_1,
+            ptr_offset_2,
+        );
+
+        // merge them together
+        var ptr_offset: u16 = (ptr_offset_1 << 7) | ptr_offset_2;
+
+        // set first two bits of ptr_offset to zero as they're the
+        // pointer prefix bits (which are always 1, which brings problems)
+        ptr_offset &= ~u16(1 << 15);
+        ptr_offset &= ~u16(1 << 14);
+
+        std.debug.warn("offset: {}\n", ptr_offset);
+
+        unreachable;
+    }
+
     fn deserializeLabel(self: *DNSPacket, deserializer: var) !?[]u8 {
         // check if label is a pointer, this byte will contain 11 as the starting
         // point of it
         var ptr_prefix = try deserializer.deserialize(u8);
         if (ptr_prefix == 0) return null;
 
-        // TODO: merge ptr_prefix with label_size
-
         var bit1 = (ptr_prefix & (1 << 7)) != 0;
         var bit2 = (ptr_prefix & (1 << 6)) != 0;
 
         if (bit1 and bit2) {
-            // we need to read another u8 and merge both ptr_prefix and the
-            // u8 we read into an u16, then remove the compression prefix bits
-
-            //try self.deserializePointer(ptr_prefix, deserializer);
-
-            // TODO: remove unreachable
-            unreachable;
+            return try self.deserializePointer(ptr_prefix, deserializer);
         } else {
             // the ptr_prefix is currently encoding the label's size
             var label = try self.allocator.alloc(u8, ptr_prefix);
