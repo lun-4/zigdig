@@ -243,17 +243,24 @@ pub const DNSPacket = struct {
 
         // TODO: merge ptr_prefix with label_size
 
-        var bit1 = (ptr_prefix & (1 << 7));
-        var bit2 = (ptr_prefix & (1 << 6));
+        var bit1 = (ptr_prefix & (1 << 7)) != 0;
+        var bit2 = (ptr_prefix & (1 << 6)) != 0;
 
         if (bit1 and bit2) {
-            self.deserializePointer(ptr_prefix, deserializer);
+            // we need to read another u8 and merge both ptr_prefix and the
+            // u8 we read into an u16, then remove the compression prefix bits
+
+            //try self.deserializePointer(ptr_prefix, deserializer);
+
+            // TODO: remove unreachable
+            unreachable;
         } else {
-            var label = try self.allocator.alloc(u8, label_size);
+            // the ptr_prefix is currently encoding the label's size
+            var label = try self.allocator.alloc(u8, ptr_prefix);
 
             // properly deserialize the slice
             var label_idx: usize = 0;
-            while (label_idx < label_size) : (label_idx += 1) {
+            while (label_idx < ptr_prefix) : (label_idx += 1) {
                 label[label_idx] = try deserializer.deserialize(u8);
                 std.debug.warn("label[{}] = {} ", label_idx, label[label_idx]);
             }
@@ -277,7 +284,7 @@ pub const DNSPacket = struct {
             if (label) |denulled_label| {
                 // allocate the new label and the new size of labels
                 labels = try self.allocator.realloc(labels, (labels_idx + 1));
-                labels[labels_idx] = label;
+                labels[labels_idx] = denulled_label;
             } else {
                 break;
             }

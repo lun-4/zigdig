@@ -46,7 +46,7 @@ fn base64Encode(data: []u8) void {
     std.debug.warn("b64 encoded: '{}'\n", encoded);
 }
 
-pub fn recvDNSPacket(sockfd: i32, allocator: *Allocator) !void {
+pub fn recvDNSPacket(sockfd: i32, allocator: *Allocator) !DNSPacket {
     var buffer = try allocator.alloc(u8, 512);
     var byte_count = try os.posixRead(sockfd, buffer);
     if (byte_count == 0) return DNSError.NetError;
@@ -61,7 +61,8 @@ pub fn recvDNSPacket(sockfd: i32, allocator: *Allocator) !void {
     var in_stream = &in.stream;
     var deserializer = io.Deserializer(.Big, .Bit, InError).init(in_stream);
 
-    return try deserializer.deserializeInto(&pkt);
+    try deserializer.deserializeInto(&pkt);
+    return pkt;
 }
 
 test "fake socket open/close" {
