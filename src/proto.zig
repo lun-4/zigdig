@@ -54,8 +54,8 @@ pub fn recvDNSPacket(sockfd: i32, allocator: *Allocator) !DNSPacket {
     var packet_slice = buffer[0..byte_count];
     var pkt = try DNSPacket.init(allocator, packet_slice);
 
-    std.debug.warn("recv {} bytes for packet\n", byte_count);
-    base64Encode(packet_slice);
+    //std.debug.warn("recv {} bytes for packet\n", byte_count);
+    //base64Encode(packet_slice);
 
     var in = io.SliceInStream.init(packet_slice);
     var in_stream = &in.stream;

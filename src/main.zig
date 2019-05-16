@@ -24,32 +24,49 @@ test "zigdig" {
 
 fn printPacket(pkt: DNSPacket) !void {
     std.debug.warn(
-        "ID={} OPCODE={} RCODE={}",
+        "id: {}, opcode: {}, rcode: {}\n",
         pkt.header.id,
         pkt.header.opcode,
         pkt.header.rcode,
     );
 
     std.debug.warn(
-        "QDCOUNT={} ANCOUNT={} NSCOUNT={} ARCOUNT={}",
+        "qd: {}, an: {}, ns: {}, ar: {}\n\n",
         pkt.header.qdcount,
         pkt.header.ancount,
         pkt.header.nscount,
         pkt.header.arcount,
     );
 
+    if (pkt.header.qdcount > 0) {
+        std.debug.warn(";;-- question --\n");
+        std.debug.warn(";;qname\t\tqtype\tqclass\n");
+
+        for (pkt.questions) |question| {
+            std.debug.warn(
+                "{}.\t{}\t{}\n",
+                packet.nameToStr(pkt.allocator, question.qname),
+                question.qtype,
+                question.qclass,
+            );
+        }
+
+        std.debug.warn("\n");
+    }
+
     if (pkt.header.ancount > 0) {
-        std.debug.warn(";;ANSWER SECTION\n");
+        std.debug.warn(";; -- answer --\n");
+        std.debug.warn(";;name\t\trrtype\tclass\tttl\trdata\n");
 
         for (pkt.answers) |answer| {
             // TODO: convert rr_type to better []u8 representation, same for
             // class (IN and A, and etc)
             std.debug.warn(
-                "{} {} {} {}\n",
+                "{}.\t{}\t{}\t{}\t;; TODO: dns rdata parse\n",
                 try packet.nameToStr(pkt.allocator, answer.name),
-                answer.ttl,
-                answer.class,
                 answer.rr_type,
+                answer.class,
+                answer.ttl,
             );
         }
     }
@@ -65,7 +82,7 @@ fn resolve(allocator: *Allocator, addr: std.net.Address, pkt: DNSPacket) !bool {
 
     var recvpkt = try proto.recvDNSPacket(sockfd, allocator);
 
-    std.debug.warn("{}\n", recvpkt.as_str());
+    std.debug.warn("recv packet: {}\n", recvpkt.as_str());
 
     // safety checks against unknown udp replies on the same socket
     if (recvpkt.header.id != pkt.header.id) return DNSError.UnknownReplyId;
@@ -143,23 +160,20 @@ pub fn main() anyerror!void {
 
     var pkt = try makeDNSPacket(allocator, name, qtype);
 
-    std.debug.warn("packet: {}\n", pkt.as_str());
+    std.debug.warn("sending packet: {}\n", pkt.as_str());
 
     // read /etc/resolv.conf for nameserver
     var nameservers = try resolv.readNameservers();
 
     for (nameservers) |nameserver| {
         if (nameserver[0] == 0) continue;
-        std.debug.warn("nameserver '{}'\n", nameserver);
 
         // TODO: ipv6 address support
-        var ip4addr = try std.net.parseIp4("127.0.0.1");
-        var addr = std.net.Address.initIp4(ip4addr, 36953);
-        //var ip4addr = try std.net.parseIp4(nameserver);
-        //var addr = std.net.Address.initIp4(ip4addr, 53);
+        //var ip4addr = try std.net.parseIp4("127.0.0.1");
+        //var addr = std.net.Address.initIp4(ip4addr, 36953);
+        var ip4addr = try std.net.parseIp4(nameserver);
+        var addr = std.net.Address.initIp4(ip4addr, 53);
 
         if (try resolve(allocator, addr, pkt)) break;
     }
-
-    std.debug.warn("OK\n");
 }
