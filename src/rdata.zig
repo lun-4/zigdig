@@ -5,6 +5,8 @@ const io = std.io;
 const types = @import("types.zig");
 const packet = @import("packet.zig");
 
+const InError = io.SliceInStream.Error;
+
 const DNSRData = union(types.DNSType) {
     A: u32,
     AAAA: std.net.Ip6Addr,
@@ -50,10 +52,17 @@ const DNSRData = union(types.DNSType) {
     TXT: [][]const u8,
 };
 
-/// Parse a given OpaqueDNSRData into a DNSRData.
+/// Parse a given OpaqueDNSRData into a DNSRData. Requires the original
+/// DNSPacket for allocator purposes and the original DNSResource for
+/// TYPE detection.
 pub fn parseRData(
     packet: packet.DNSPacket,
+    resource: packet.DNSResource,
     opaque: packet.OpaqueDNSRData,
 ) !DNSRData {
-    // TODO
+    var in = io.SliceInStream(opaque);
+    var in_stream = &in.stream;
+    var deserializer = io.Deserializer(.Big, .Bit, InError).init(in_stream);
+
+    // TODO: select the proper rdata deserializer based on the resource.type
 }

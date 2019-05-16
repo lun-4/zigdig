@@ -5,6 +5,7 @@ const fmt = std.fmt;
 const packet = @import("packet.zig");
 const proto = @import("proto.zig");
 const resolv = @import("resolvconf.zig");
+const types = @import("types.zig");
 
 const DNSPacket = packet.DNSPacket;
 const DNSPacketRCode = packet.DNSPacketRCode;
@@ -46,7 +47,7 @@ fn printPacket(pkt: DNSPacket) !void {
             std.debug.warn(
                 "{}.\t{}\t{}\n",
                 packet.nameToStr(pkt.allocator, question.qname),
-                question.qtype,
+                types.typeToStr(question.qtype),
                 question.qclass,
             );
         }
@@ -64,7 +65,7 @@ fn printPacket(pkt: DNSPacket) !void {
             std.debug.warn(
                 "{}.\t{}\t{}\t{}\t;; TODO: dns rdata parse\n",
                 try packet.nameToStr(pkt.allocator, answer.name),
-                answer.rr_type,
+                types.typeToStr(answer.rr_type),
                 answer.class,
                 answer.ttl,
             );

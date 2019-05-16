@@ -1,6 +1,6 @@
 // DNS QTYPE
 
-const DNSType = enum {
+const DNSType = enum(u16) {
     A = 1,
     NS,
     MD,
@@ -17,22 +17,33 @@ const DNSType = enum {
     MINFO,
     MX,
     TXT,
-};
 
-const DNSQType = enum {
+    // QTYPE only, but merging under DNSType
+    // for nicer API
     AXFR = 252,
-    MAILB = 253,
-    MAILA = 254,
-    WILDCARD = 255,
+    MAILB,
+    MAILA,
+    WILDCARD,
 };
 
-const DNSClass = enum {
+const DNSClass = enum(u16) {
     IN = 1,
     CS,
     CH,
     HS,
-};
-
-const DNSQClass = enum {
     WILDCARD = 255,
 };
+
+/// Convert a DNSType u16 into a string representing it.
+pub fn typeToStr(qtype: u16) []const u8 {
+    const type_info = @typeInfo(DNSType).Enum;
+    var as_dns_type = @intToEnum(DNSType, qtype);
+
+    inline for (type_info.fields) |field| {
+        if (field.value == qtype) {
+            return field.name;
+        }
+    }
+
+    return "<unknown>";
+}
