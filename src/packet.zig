@@ -174,6 +174,8 @@ pub const DNSPacket = struct {
     const Self = @This();
     pub const Error = error{};
 
+    raw_bytes: []const u8,
+
     pub header: DNSHeader,
     pub questions: []DNSQuestion,
     pub answers: []DNSResource,
@@ -183,9 +185,13 @@ pub const DNSPacket = struct {
     pub allocator: *Allocator,
 
     /// Caller owns the memory.
-    pub fn init(allocator: *Allocator) !DNSPacket {
+    pub fn init(allocator: *Allocator, raw_bytes: []const u8) !DNSPacket {
         var self = DNSPacket{
             .header = DNSHeader.init(),
+
+            // keeping the original packet bytes
+            // for compression purposes
+            .raw_bytes = raw_bytes,
             .allocator = allocator,
 
             .questions = try allocator.alloc(DNSQuestion, 0),
@@ -230,25 +236,20 @@ pub const DNSPacket = struct {
         }
     }
 
-    /// Deserializes a DNSName, which represents a slice of slice of u8 ([][]u8)
-    fn deserializeName(self: *DNSPacket, deserializer: var) !DNSName {
-        // allocate empty label slice
-        var labels: [][]u8 = try self.allocator.alloc([]u8, 0);
-        var labels_idx: usize = 0;
+    fn deserializeLabel(self: *DNSPacket, deserializer: var) !?[]u8 {
+        // check if label is a pointer, this byte will contain 11 as the starting
+        // point of it
+        var ptr_prefix = try deserializer.deserialize(u8);
 
-        while (true) {
-            var label_size = try deserializer.deserialize(u8);
-            if (label_size == 0) break;
+        // TODO: merge ptr_prefix with label_size
 
-            std.debug.warn("deserializing {} byte label\n", label_size);
+        var bit1 = (ptr_prefix & (1 << 7));
+        var bit2 = (ptr_prefix & (1 << 6));
 
-            // allocate the new label and the new size of labels
-            labels = try self.allocator.realloc(labels, (labels_idx + 1));
+        if (bit1 and bit2) {
+            self.deserializePointer(ptr_prefix, deserializer);
+        } else {
             var label = try self.allocator.alloc(u8, label_size);
-
-            // equaling here will just assign the newly created slice
-            // to our array of slices
-            labels[labels_idx] = label;
 
             // properly deserialize the slice
             var label_idx: usize = 0;
@@ -258,6 +259,28 @@ pub const DNSPacket = struct {
             }
 
             std.debug.warn("deserialized full label '{}'\n", label);
+            return label;
+        }
+
+        return null;
+    }
+
+    /// Deserializes a DNSName, which represents a slice of slice of u8 ([][]u8)
+    fn deserializeName(self: *DNSPacket, deserializer: var) !DNSName {
+        // allocate empty label slice
+        var labels: [][]u8 = try self.allocator.alloc([]u8, 0);
+        var labels_idx: usize = 0;
+
+        while (true) {
+            var label = try self.deserializeLabel(deserializer);
+
+            if (label) |denulled_label| {
+                // allocate the new label and the new size of labels
+                labels = try self.allocator.realloc(labels, (labels_idx + 1));
+                labels[labels_idx] = label;
+            } else {
+                break;
+            }
 
             labels_idx += 1;
         }
@@ -434,13 +457,14 @@ fn deserialTest(allocator: *Allocator, buf: []u8) !DNSPacket {
     var in = io.SliceInStream.init(buf);
     var in_stream = &in.stream;
     var deserializer = io.Deserializer(.Big, .Bit, InError).init(in_stream);
-    var pkt = try DNSPacket.init(allocator);
+    var pkt = try DNSPacket.init(allocator, buf);
     try deserializer.deserializeInto(&pkt);
     return pkt;
 }
 
 // extracted with 'dig google.com a +noedns'
-const GOOGLE_COM_A_PKT = "FEUBIAABAAAAAAAABmdvb2dsZQNjb20AAAEAAQ==";
+const TEST_PKT_QUERY = "FEUBIAABAAAAAAAABmdvb2dsZQNjb20AAAEAAQ==";
+const TEST_PKT_RESPONSE = "RM2BgAABAAEAAAAABmdvb2dsZQNjb20AAAEAAcAMAAEAAQAAASwABNg6yo4=";
 
 test "DNSPacket serialize/deserialize" {
     // setup a random id packet
@@ -449,7 +473,7 @@ test "DNSPacket serialize/deserialize" {
     defer arena.deinit();
     const allocator = &arena.allocator;
 
-    var packet = try DNSPacket.init(allocator);
+    var packet = try DNSPacket.init(allocator, ""[0..]);
 
     var r = rand.DefaultPrng.init(os.time.timestamp());
     const random_id = r.random.int(u16);
@@ -465,15 +489,20 @@ test "DNSPacket serialize/deserialize" {
     testing.expectEqual(new_packet.header.id, packet.header.id);
 }
 
+fn decodeBase64(encoded: []const u8) ![]u8 {
+    var buf: [0x10000]u8 = undefined;
+    var decoded = buf[0..try base64.standard_decoder.calcSize(encoded)];
+    try base64.standard_decoder.decode(decoded, encoded);
+    return decoded;
+}
+
 test "deserialization of original google.com/A" {
     var da = std.heap.DirectAllocator.init();
     var arena = std.heap.ArenaAllocator.init(&da.allocator);
     errdefer arena.deinit();
     const allocator = &arena.allocator;
 
-    var buf: [0x1000]u8 = undefined;
-    var decoded = buf[0..try base64.standard_decoder.calcSize(GOOGLE_COM_A_PKT)];
-    try base64.standard_decoder.decode(decoded, GOOGLE_COM_A_PKT);
+    var decoded = try decodeBase64(TEST_PKT_QUERY[0..]);
     var pkt = try deserialTest(allocator, decoded);
 
     std.debug.assert(pkt.header.id == 5189);
@@ -485,6 +514,32 @@ test "deserialization of original google.com/A" {
     // TODO: assert values of question slice
 }
 
+test "deserialization of reply google.com/A" {
+    var da = std.heap.DirectAllocator.init();
+    var arena = std.heap.ArenaAllocator.init(&da.allocator);
+    errdefer arena.deinit();
+    const allocator = &arena.allocator;
+
+    var decoded = try decodeBase64(TEST_PKT_RESPONSE[0..]);
+    var pkt = try deserialTest(allocator, decoded);
+
+    std.debug.assert(pkt.header.qdcount == 1);
+    std.debug.assert(pkt.header.ancount == 1);
+    std.debug.assert(pkt.header.nscount == 0);
+    std.debug.assert(pkt.header.arcount == 0);
+
+    // TODO: assert values of question slice
+}
+
+fn encodePacket(pkt: DNSPacket) ![]u8 {
+    var out = try serialTest(pkt.allocator, pkt);
+    var buffer: [0x10000]u8 = undefined;
+    var encoded = buffer[0..base64.Base64Encoder.calcSize(out.len)];
+    base64.standard_encoder.encode(encoded, out);
+
+    return encoded;
+}
+
 test "serialization of google.com/A" {
     // setup a random id packet
     var da = std.heap.DirectAllocator.init();
@@ -492,7 +547,7 @@ test "serialization of google.com/A" {
     errdefer arena.deinit();
     const allocator = &arena.allocator;
 
-    var pkt = try DNSPacket.init(allocator);
+    var pkt = try DNSPacket.init(allocator, ""[0..]);
     pkt.header.id = 5189;
     pkt.header.rd = true;
     pkt.header.z = 2;
@@ -506,11 +561,7 @@ test "serialization of google.com/A" {
     };
 
     try pkt.addQuestion(question);
-    var out = try serialTest(allocator, pkt);
 
-    var buffer: [0x10000]u8 = undefined;
-    var encoded = buffer[0..base64.Base64Encoder.calcSize(out.len)];
-    base64.standard_encoder.encode(encoded, out);
-
-    testing.expectEqualSlices(u8, encoded, GOOGLE_COM_A_PKT);
+    var encoded = try encodePacket(pkt);
+    testing.expectEqualSlices(u8, encoded, TEST_PKT_QUERY);
 }

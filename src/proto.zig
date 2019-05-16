@@ -5,6 +5,7 @@ const os = std.os;
 const io = std.io;
 
 const posix = os.posix;
+const Allocator = std.mem.Allocator;
 
 const packet = @import("packet.zig");
 const DNSPacket = packet.DNSPacket;
@@ -45,16 +46,13 @@ fn base64Encode(data: []u8) void {
     std.debug.warn("b64 encoded: '{}'\n", encoded);
 }
 
-pub fn recvDNSPacket(
-    sockfd: i32,
-    pkt: *DNSPacket,
-) !void {
-    var buffer = try pkt.allocator.alloc(u8, 512);
-
+pub fn recvDNSPacket(sockfd: i32, allocator: *Allocator) !void {
+    var buffer = try allocator.alloc(u8, 512);
     var byte_count = try os.posixRead(sockfd, buffer);
     if (byte_count == 0) return DNSError.NetError;
 
     var packet_slice = buffer[0..byte_count];
+    var pkt = try DNSPacket.init(allocator, packet_slice);
 
     std.debug.warn("recv {} bytes for packet\n", byte_count);
     base64Encode(packet_slice);
@@ -63,7 +61,7 @@ pub fn recvDNSPacket(
     var in_stream = &in.stream;
     var deserializer = io.Deserializer(.Big, .Bit, InError).init(in_stream);
 
-    return try deserializer.deserializeInto(pkt);
+    return try deserializer.deserializeInto(&pkt);
 }
 
 test "fake socket open/close" {

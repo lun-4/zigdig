@@ -63,8 +63,7 @@ fn resolve(allocator: *Allocator, addr: std.net.Address, pkt: DNSPacket) !bool {
 
     try proto.sendDNSPacket(sockfd, pkt, buf);
 
-    var recvpkt = try packet.DNSPacket.init(allocator);
-    try proto.recvDNSPacket(sockfd, &recvpkt);
+    var recvpkt = try proto.recvDNSPacket(sockfd, allocator);
 
     std.debug.warn("{}\n", recvpkt.as_str());
 
@@ -97,7 +96,7 @@ fn makeDNSPacket(
     qtype: []u8,
 ) !DNSPacket {
     var qtype_i = try fmt.parseInt(u8, qtype, 10);
-    var pkt = try DNSPacket.init(allocator);
+    var pkt = try DNSPacket.init(allocator, ""[0..]);
 
     // set random u16 as the id + all the other goodies in the header
     var r = std.rand.DefaultPrng.init(std.os.time.timestamp());
