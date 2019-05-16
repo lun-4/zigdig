@@ -151,7 +151,7 @@ pub const DNSQuestion = struct {
     pub qclass: u16,
 };
 
-pub const DNSRData = struct {
+pub const OpaqueDNSRData = struct {
     len: u16,
     value: []u8,
 };
@@ -167,7 +167,7 @@ pub const DNSResource = struct {
     // instead of an u8.
     // NOTE: maybe we re-deserialize this one specifically on
     // another section of the source dedicated to specific RDATA
-    rdata: DNSRData,
+    rdata: OpaqueDNSRData,
 };
 
 const LabelComponentTag = enum {
@@ -377,7 +377,7 @@ pub const DNSPacket = struct {
         return DNSName{ .labels = labels };
     }
 
-    fn deserializeRData(self: *DNSPacket, deserializer: var) !DNSRData {
+    fn deserializeRData(self: *DNSPacket, deserializer: var) !OpaqueDNSRData {
         var rdlength = try deserializer.deserialize(u16);
         var rdata = try self.allocator.alloc(u8, rdlength);
         var i: u16 = 0;
@@ -386,7 +386,7 @@ pub const DNSPacket = struct {
             rdata[i] = try deserializer.deserialize(u8);
         }
 
-        return DNSRData{ .len = rdlength, .value = rdata };
+        return OpaqueDNSRData{ .len = rdlength, .value = rdata };
     }
 
     /// Deserialize a list of DNSResource which sizes are controlled by the
@@ -535,8 +535,8 @@ fn serialTest(allocator: *Allocator, packet: DNSPacket) ![]u8 {
 
 fn deserialTest(allocator: *Allocator, buf: []u8) !DNSPacket {
     var in = io.SliceInStream.init(buf);
-    var in_stream = &in.stream;
-    var deserializer = io.Deserializer(.Big, .Bit, InError).init(in_stream);
+    var stream = &in.stream;
+    var deserializer = io.Deserializer(.Big, .Bit, InError).init(stream);
     var pkt = try DNSPacket.init(allocator, buf);
     try deserializer.deserializeInto(&pkt);
     return pkt;
