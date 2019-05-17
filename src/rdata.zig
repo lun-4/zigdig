@@ -10,7 +10,10 @@ const DNSType = types.DNSType;
 
 const DNSRData = union(types.DNSType) {
     A: std.net.Address,
-    AAAA: std.net.Address,
+
+    // TODO: move this to std.net.Address once the stdlib has fixes
+    // for ipv6 storage & unparsing.
+    AAAA: [16]u8,
     NS: packet.DNSName,
     MD: packet.DNSName,
     MF: packet.DNSName,
@@ -71,6 +74,15 @@ pub fn parseRData(
             var addr = try deserializer.deserialize(u32);
             break :blk DNSRData{ .A = std.net.Address.initIp4(addr, 53) };
         },
+        DNSType.AAAA => blk: {
+            var ip6_addr: [16]u8 = undefined;
+
+            for (ip6_addr) |byte, i| {
+                ip6_addr[i] = try deserializer.deserialize(u8);
+            }
+
+            break :blk DNSRData{ .AAAA = ip6_addr };
+        },
         // TODO: DNSName deserialization
         else => unreachable,
     };
@@ -92,6 +104,24 @@ pub fn prettyRData(rdata: DNSRData, buf: []u8) ![]const u8 {
             try stream.print("{}.{}.{}.{}", v4, v3, v2, v1);
             break :blk;
         },
+        DNSType.AAAA => blk: {
+            var prev_zero: bool = false;
+            for (rdata.AAAA) |byte| {
+                if (prev_zero and byte == 0) {
+                    // if previous byte was 0 we shouldn't need
+                    // to do anything
+                } else {
+                    try stream.print(":");
+                    if (byte == 0) {
+                        prev_zero = true;
+                        continue;
+                    }
+                    try stream.print("{x}", byte);
+                }
+            }
+            break :blk;
+        },
+
         // TODO: DNSName deserialization
         else => try stream.print("unknown rdata"),
     }
