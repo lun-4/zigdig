@@ -52,15 +52,17 @@ fn toUpper(str: []const u8, out: []u8) void {
 
 /// Convert a given string to an integer representing a DNSType.
 pub fn strToType(str: []const u8) !u16 {
-    var uppercased: [16]u8 = undefined;
+    var uppercased: [16]u8 = []u8{0} ** 16;
     toUpper(str, uppercased[0..]);
-    std.mem.secureZero(u8, uppercased[str.len..]);
 
     var to_compare: [16]u8 = undefined;
     const type_info = @typeInfo(DNSType).Enum;
 
     inline for (type_info.fields) |field| {
         std.mem.copy(u8, to_compare[0..], field.name);
+
+        // we have to secureZero here because a previous comparison
+        // might have used those zero bytes for itself.
         std.mem.secureZero(u8, to_compare[field.name.len..]);
 
         if (std.mem.eql(u8, uppercased, to_compare)) {
