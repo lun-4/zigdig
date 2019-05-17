@@ -65,7 +65,6 @@ fn printPacket(pkt: DNSPacket) !void {
             // TODO: convert rr_type to better []u8 representation, same for
             // class (IN and A, and etc)
             var pkt_rdata = try rdata.parseRData(pkt, answer, answer.rdata);
-            var buf: [255]u8 = undefined;
 
             std.debug.warn(
                 "{}.\t{}\t{}\t{}\t{}\n",
@@ -73,7 +72,7 @@ fn printPacket(pkt: DNSPacket) !void {
                 types.typeToStr(answer.rr_type),
                 answer.class,
                 answer.ttl,
-                try rdata.prettyRData(pkt_rdata, buf[0..]),
+                try rdata.prettyRData(pkt.allocator, pkt_rdata),
             );
         }
     }

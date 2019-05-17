@@ -1,1 +1,4 @@
-pub const DNSError = error{UnknownDNSType};
+pub const DNSError = error{
+    UnknownDNSType,
+    RDATANotSupported,
+};

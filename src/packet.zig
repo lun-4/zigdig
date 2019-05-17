@@ -127,7 +127,7 @@ pub fn toDNSName(allocator: *Allocator, domain: []const u8) !DNSName {
     return DNSName{ .labels = labels[0..] };
 }
 
-pub fn nameToStr(allocator: *Allocator, name: DNSName) ![]u8 {
+pub fn nameToStr(allocator: *Allocator, name: DNSName) ![]const u8 {
     return try std.mem.join(allocator, ".", name.labels);
 }
 

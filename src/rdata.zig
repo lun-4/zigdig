@@ -4,8 +4,11 @@ const io = std.io;
 
 const types = @import("types.zig");
 const packet = @import("packet.zig");
+const err = @import("error.zig");
 
+const DNSError = err.DNSError;
 const InError = io.SliceInStream.Error;
+const OutError = io.SliceOutStream.Error;
 const DNSType = types.DNSType;
 
 const DNSRData = union(types.DNSType) {
@@ -56,6 +59,32 @@ const DNSRData = union(types.DNSType) {
     TXT: [][]const u8,
 };
 
+// this is also copied code off simpleDeserializeName
+fn deserialName_RData(pkt: packet.DNSPacket, deserializer_cst: var) !packet.DNSName {
+    var deserializer = deserializer_cst;
+    var labels: [][]u8 = try pkt.allocator.alloc([]u8, 0);
+    var labels_idx: usize = 0;
+
+    while (true) {
+        var label_size = try deserializer.deserialize(u8);
+        if (label_size == 0) break;
+
+        labels = try pkt.allocator.realloc(labels, labels_idx + 1);
+        var label = try pkt.allocator.alloc(u8, label_size);
+
+        // properly deserialize the slice
+        var label_idx: usize = 0;
+        while (label_idx < label_size) : (label_idx += 1) {
+            label[label_idx] = try deserializer.deserialize(u8);
+        }
+
+        labels[labels_idx] = label;
+        labels_idx += 1;
+    }
+
+    return packet.DNSName{ .labels = labels };
+}
+
 /// Parse a given OpaqueDNSRData into a DNSRData. Requires the original
 /// DNSPacket for allocator purposes and the original DNSResource for
 /// TYPE detection.
@@ -68,13 +97,14 @@ pub fn parseRData(
     var in = io.SliceInStream.init(opaque_val);
     var in_stream = &in.stream;
     var deserializer = io.Deserializer(.Big, .Bit, InError).init(in_stream);
+    var rdata_enum = @intToEnum(DNSType, resource.rr_type);
 
-    var rdata = switch (@intToEnum(DNSType, resource.rr_type)) {
-        DNSType.A => blk: {
+    var rdata = switch (rdata_enum) {
+        .A => blk: {
             var addr = try deserializer.deserialize(u32);
             break :blk DNSRData{ .A = std.net.Address.initIp4(addr, 53) };
         },
-        DNSType.AAAA => blk: {
+        .AAAA => blk: {
             var ip6_addr: [16]u8 = undefined;
 
             for (ip6_addr) |byte, i| {
@@ -83,14 +113,33 @@ pub fn parseRData(
 
             break :blk DNSRData{ .AAAA = ip6_addr };
         },
-        // TODO: DNSName deserialization
-        else => unreachable,
+
+        // does a dnsname parsing and since *by the standard* they can't
+        // have pointers, we'll do this here
+        .NS => DNSRData{ .NS = try deserialName_RData(pkt, deserializer) },
+        .CNAME => DNSRData{ .CNAME = try deserialName_RData(pkt, deserializer) },
+        .PTR => DNSRData{ .PTR = try deserialName_RData(pkt, deserializer) },
+
+        else => blk: {
+            return DNSError.RDATANotSupported;
+        },
     };
 
     return rdata;
 }
 
-pub fn prettyRData(rdata: DNSRData, buf: []u8) ![]const u8 {
+fn printName(
+    stream: *std.io.OutStream(OutError),
+    name: packet.DNSName,
+) !void {
+    for (name.labels) |label| {
+        try stream.print(label);
+        try stream.print(".");
+    }
+}
+
+pub fn prettyRData(allocator: *std.mem.Allocator, rdata: DNSRData) ![]const u8 {
+    var buf = try allocator.alloc(u8, 256);
     var out = io.SliceOutStream.init(buf[0..]);
     var stream = &out.stream;
 
@@ -104,6 +153,7 @@ pub fn prettyRData(rdata: DNSRData, buf: []u8) ![]const u8 {
             try stream.print("{}.{}.{}.{}", v4, v3, v2, v1);
             break :blk;
         },
+
         DNSType.AAAA => blk: {
             var prev_zero: bool = false;
             for (rdata.AAAA) |byte| {
@@ -121,6 +171,22 @@ pub fn prettyRData(rdata: DNSRData, buf: []u8) ![]const u8 {
             }
             break :blk;
         },
+
+        //.NS => try stream.print("uwu"),
+        //        .NS => blk: {
+        //            var res = try packet.nameToStr(allocator, rdata.NS);
+        //            try stream.print(res);
+        //            break :blk;
+        //        },
+
+        //        .CNAME => blk: {
+        //            try printName(stream, rdata.NS);
+        //            break :blk;
+        //        },
+        //        .PTR => blk: {
+        //            try printName(stream, rdata.NS);
+        //            break :blk;
+        //        },
 
         // TODO: DNSName deserialization
         else => try stream.print("unknown rdata"),
