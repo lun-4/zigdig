@@ -11,6 +11,9 @@ dns client in zig
 
 ```
 zig build test
+
+# on debug mode it gets debug stuff to stdout. compile in
+# release-safe or above if you're not developing with this lib
 zig build install --prefix ~/.local/
 ```
 

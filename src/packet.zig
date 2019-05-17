@@ -1,4 +1,6 @@
 const std = @import("std");
+const builtin = @import("builtin");
+
 const base64 = std.base64;
 
 const rand = std.rand;
@@ -19,6 +21,12 @@ pub const DNSPacketRCode = enum(u4) {
     NotImpl,
     Refused,
 };
+
+fn debugWarn(comptime format: []const u8, args: ...) void {
+    if (builtin.mode == builtin.Mode.Debug) {
+        std.debug.warn("[zigdig debug] " ++ format, args);
+    }
+}
 
 pub const DNSHeader = packed struct {
     id: u16,
@@ -447,6 +455,7 @@ pub const DNSPacket = struct {
 
     pub fn deserialize(self: *DNSPacket, deserializer: var) !void {
         self.header = try deserializer.deserialize(DNSHeader);
+        debugWarn("receiving header: {}\n", self.header.as_str());
 
         // allocate the slices based on header data (WHEN DESERIALIZING).
         // when serializing or using addQuestion we do a realloc.
