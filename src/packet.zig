@@ -366,13 +366,14 @@ pub const DNSPacket = struct {
                             // [][]const u8{"ns", "cloudflare", "com"}. we
                             // need to copy that, as a suffix, to the existing
                             // labels slice
-                            for (label_ptr) |label_ptr_label| {
+                            for (label_ptr) |label_ptr_label, idx| {
                                 labels[labels_idx] = label_ptr_label;
                                 labels_idx += 1;
 
                                 // reallocate to account for the next incoming label
-                                // TODO: doesn't this allocate one extra slot than what's required?
-                                labels = try self.allocator.realloc(labels, (labels_idx + 1));
+                                if (idx != label_ptr.len - 1) {
+                                    labels = try self.allocator.realloc(labels, (labels_idx + 1));
+                                }
                             }
 
                             return DNSName{ .labels = labels };
