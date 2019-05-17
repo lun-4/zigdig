@@ -12,7 +12,7 @@ const DNSPacket = packet.DNSPacket;
 const DNSPacketRCode = packet.DNSPacketRCode;
 const Allocator = std.mem.Allocator;
 
-const DNSError = error{
+const MainDNSError = error{
     UnknownReplyId,
     GotQuestion,
     RCodeErr,
@@ -92,8 +92,8 @@ fn resolve(allocator: *Allocator, addr: std.net.Address, pkt: DNSPacket) !bool {
     std.debug.warn("recv packet: {}\n", recvpkt.as_str());
 
     // safety checks against unknown udp replies on the same socket
-    if (recvpkt.header.id != pkt.header.id) return DNSError.UnknownReplyId;
-    if (!recvpkt.header.qr_flag) return DNSError.GotQuestion;
+    if (recvpkt.header.id != pkt.header.id) return MainDNSError.UnknownReplyId;
+    if (!recvpkt.header.qr_flag) return MainDNSError.GotQuestion;
 
     // TODO: nicer error handling, with a nice print n stuff
     switch (@intToEnum(DNSPacketRCode, recvpkt.header.rcode)) {
@@ -108,7 +108,7 @@ fn resolve(allocator: *Allocator, addr: std.net.Address, pkt: DNSPacket) !bool {
         DNSPacketRCode.NotImpl, DNSPacketRCode.Refused, DNSPacketRCode.FmtError, DNSPacketRCode.NameErr => {
             var val = @intToEnum(DNSPacketRCode, recvpkt.header.rcode);
             std.debug.warn("{}\n", val);
-            return DNSError.RCodeErr;
+            return MainDNSError.RCodeErr;
         },
         else => unreachable,
     }
@@ -119,7 +119,7 @@ fn makeDNSPacket(
     name: []u8,
     qtype: []u8,
 ) !DNSPacket {
-    var qtype_i = try fmt.parseInt(u8, qtype, 10);
+    var qtype_i = try types.strToType(qtype);
     var pkt = try DNSPacket.init(allocator, ""[0..]);
 
     // set random u16 as the id + all the other goodies in the header
@@ -130,8 +130,6 @@ fn makeDNSPacket(
 
     var question = packet.DNSQuestion{
         .qname = try packet.toDNSName(allocator, name),
-
-        // TODO: add a DNSType enum and conversions between them
         .qtype = qtype_i,
 
         // TODO: add a DNSClass enum
