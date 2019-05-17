@@ -59,32 +59,6 @@ const DNSRData = union(types.DNSType) {
     TXT: [][]const u8,
 };
 
-// this is also copied code off simpleDeserializeName
-fn deserialName_RData(pkt: packet.DNSPacket, deserializer_cst: var) !packet.DNSName {
-    var deserializer = deserializer_cst;
-    var labels: [][]u8 = try pkt.allocator.alloc([]u8, 0);
-    var labels_idx: usize = 0;
-
-    while (true) {
-        var label_size = try deserializer.deserialize(u8);
-        if (label_size == 0) break;
-
-        labels = try pkt.allocator.realloc(labels, labels_idx + 1);
-        var label = try pkt.allocator.alloc(u8, label_size);
-
-        // properly deserialize the slice
-        var label_idx: usize = 0;
-        while (label_idx < label_size) : (label_idx += 1) {
-            label[label_idx] = try deserializer.deserialize(u8);
-        }
-
-        labels[labels_idx] = label;
-        labels_idx += 1;
-    }
-
-    return packet.DNSName{ .labels = labels };
-}
-
 /// Parse a given OpaqueDNSRData into a DNSRData. Requires the original
 /// DNSPacket for allocator purposes and the original DNSResource for
 /// TYPE detection.
@@ -117,13 +91,9 @@ pub fn parseRData(
             break :blk DNSRData{ .AAAA = ip6_addr };
         },
 
-        .NS => blk: {
-            var name = try pkt.deserializeName(&deserializer);
-            break :blk DNSRData{ .NS = name };
-        },
-
-        .CNAME => DNSRData{ .CNAME = try deserialName_RData(pkt, deserializer) },
-        .PTR => DNSRData{ .PTR = try deserialName_RData(pkt, deserializer) },
+        .NS => DNSRData{ .NS = try pkt.deserializeName(&deserializer) },
+        .CNAME => DNSRData{ .CNAME = try pkt.deserializeName(&deserializer) },
+        .PTR => DNSRData{ .PTR = try pkt.deserializeName(&deserializer) },
 
         else => blk: {
             return DNSError.RDATANotSupported;

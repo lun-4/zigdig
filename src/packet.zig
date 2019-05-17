@@ -392,6 +392,8 @@ pub const DNSPacket = struct {
         return DNSName{ .labels = labels };
     }
 
+    /// Deserialises DNS RDATA information into an OpaqueDNSRData struct
+    /// for later parsing/unparsing.
     fn deserializeRData(self: *DNSPacket, deserializer: var) !OpaqueDNSRData {
         var rdlength = try deserializer.deserialize(u16);
         var rdata = try self.allocator.alloc(u8, rdlength);
