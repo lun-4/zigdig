@@ -344,9 +344,10 @@ pub const DNSPacket = struct {
     }
 
     /// Deserializes a DNSName, which represents a slice of slice of u8 ([][]u8)
-    fn deserializeName(self: *DNSPacket, deserializer: var) !DNSName {
+    pub fn deserializeName(self: *DNSPacket, deserial: var) !DNSName {
         // allocate empty label slice
-        var labels: [][]u8 = try self.allocator.alloc([]u8, 0);
+        var deserializer = deserial;
+        var labels: [][]const u8 = try self.allocator.alloc([]u8, 0);
         var labels_idx: usize = 0;
 
         while (true) {
@@ -360,8 +361,21 @@ pub const DNSPacket = struct {
                         if (labels_idx == 0) {
                             return DNSName{ .labels = label_ptr };
                         } else {
-                            // TODO: merge given label_ptr with existing labels
-                            unreachable;
+                            // in here we have an existing label in the labels slice, e.g "leah",
+                            // and then label_ptr points to a [][]const u8, e.g
+                            // [][]const u8{"ns", "cloudflare", "com"}. we
+                            // need to copy that, as a suffix, to the existing
+                            // labels slice
+                            for (label_ptr) |label_ptr_label| {
+                                labels[labels_idx] = label_ptr_label;
+                                labels_idx += 1;
+
+                                // reallocate to account for the next incoming label
+                                // TODO: doesn't this allocate one extra slot than what's required?
+                                labels = try self.allocator.realloc(labels, (labels_idx + 1));
+                            }
+
+                            return DNSName{ .labels = labels };
                         }
                     },
                     .Label => |label_val| labels[labels_idx] = label_val,

@@ -89,14 +89,17 @@ fn deserialName_RData(pkt: packet.DNSPacket, deserializer_cst: var) !packet.DNSN
 /// DNSPacket for allocator purposes and the original DNSResource for
 /// TYPE detection.
 pub fn parseRData(
-    pkt: packet.DNSPacket,
+    pkt_const: packet.DNSPacket,
     resource: packet.DNSResource,
     opaque: packet.OpaqueDNSRData,
 ) !DNSRData {
+    var pkt = pkt_const;
+
     var opaque_val = opaque.value;
     var in = io.SliceInStream.init(opaque_val);
     var in_stream = &in.stream;
     var deserializer = io.Deserializer(.Big, .Bit, InError).init(in_stream);
+
     var rdata_enum = @intToEnum(DNSType, resource.rr_type);
 
     var rdata = switch (rdata_enum) {
@@ -114,9 +117,11 @@ pub fn parseRData(
             break :blk DNSRData{ .AAAA = ip6_addr };
         },
 
-        // does a dnsname parsing and since *by the standard* they can't
-        // have pointers, we'll do this here
-        .NS => DNSRData{ .NS = try deserialName_RData(pkt, deserializer) },
+        .NS => blk: {
+            var name = try pkt.deserializeName(&deserializer);
+            break :blk DNSRData{ .NS = name };
+        },
+
         .CNAME => DNSRData{ .CNAME = try deserialName_RData(pkt, deserializer) },
         .PTR => DNSRData{ .PTR = try deserialName_RData(pkt, deserializer) },
 
