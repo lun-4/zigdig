@@ -11,7 +11,7 @@ dns client in zig
 
 ```
 zig build test
-zig build install
+zig build install --prefix ~/.local/
 ```
 
 ```bash
