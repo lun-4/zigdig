@@ -138,14 +138,15 @@ fn printName(
     name: packet.DNSName,
 ) !void {
     for (name.labels) |label| {
-        try stream.print(label);
+        try stream.print("{}", label);
         try stream.print(".");
     }
 }
 
 pub fn prettyRData(allocator: *std.mem.Allocator, rdata: DNSRData) ![]const u8 {
     var buf = try allocator.alloc(u8, 256);
-    var out = io.SliceOutStream.init(buf[0..]);
+
+    var out = io.SliceOutStream.init(buf);
     var stream = &out.stream;
 
     switch (rdata) {
@@ -163,8 +164,8 @@ pub fn prettyRData(allocator: *std.mem.Allocator, rdata: DNSRData) ![]const u8 {
             var prev_zero: bool = false;
             for (rdata.AAAA) |byte| {
                 if (prev_zero and byte == 0) {
-                    // if previous byte was 0 we shouldn't need
-                    // to do anything
+                    // if previous byte was 0 (and we're also 0)
+                    // we shouldn't need to do anything
                 } else {
                     try stream.print(":");
                     if (byte == 0) {
@@ -177,24 +178,12 @@ pub fn prettyRData(allocator: *std.mem.Allocator, rdata: DNSRData) ![]const u8 {
             break :blk;
         },
 
-        //.NS => try stream.print("uwu"),
-        //        .NS => blk: {
-        //            var res = try packet.nameToStr(allocator, rdata.NS);
-        //            try stream.print(res);
-        //            break :blk;
-        //        },
-
-        //        .CNAME => blk: {
-        //            try printName(stream, rdata.NS);
-        //            break :blk;
-        //        },
-        //        .PTR => blk: {
-        //            try printName(stream, rdata.NS);
-        //            break :blk;
-        //        },
+        .CNAME => try printName(stream, rdata.CNAME),
+        .NS => try printName(stream, rdata.NS),
+        .PTR => try printName(stream, rdata.PTR),
 
         // TODO: DNSName deserialization
-        else => try stream.print("unknown rdata"),
+        else => try stream.write("unsupported rdata"),
     }
 
     return buf[0..];
