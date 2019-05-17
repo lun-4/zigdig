@@ -6,10 +6,11 @@ const types = @import("types.zig");
 const packet = @import("packet.zig");
 
 const InError = io.SliceInStream.Error;
+const DNSType = types.DNSType;
 
 const DNSRData = union(types.DNSType) {
-    A: u32,
-    AAAA: std.net.Ip6Addr,
+    A: std.net.Address,
+    AAAA: std.net.Address,
     NS: packet.DNSName,
     MD: packet.DNSName,
     MF: packet.DNSName,
@@ -56,13 +57,44 @@ const DNSRData = union(types.DNSType) {
 /// DNSPacket for allocator purposes and the original DNSResource for
 /// TYPE detection.
 pub fn parseRData(
-    packet: packet.DNSPacket,
+    pkt: packet.DNSPacket,
     resource: packet.DNSResource,
     opaque: packet.OpaqueDNSRData,
 ) !DNSRData {
-    var in = io.SliceInStream(opaque);
+    var opaque_val = opaque.value;
+    var in = io.SliceInStream.init(opaque_val);
     var in_stream = &in.stream;
     var deserializer = io.Deserializer(.Big, .Bit, InError).init(in_stream);
 
-    // TODO: select the proper rdata deserializer based on the resource.type
+    var rdata = switch (@intToEnum(DNSType, resource.rr_type)) {
+        DNSType.A => blk: {
+            var addr = try deserializer.deserialize(u32);
+            break :blk DNSRData{ .A = std.net.Address.initIp4(addr, 53) };
+        },
+        // TODO: DNSName deserialization
+        else => unreachable,
+    };
+
+    return rdata;
+}
+
+pub fn prettyRData(rdata: DNSRData, buf: []u8) ![]const u8 {
+    var out = io.SliceOutStream.init(buf[0..]);
+    var stream = &out.stream;
+
+    switch (rdata) {
+        DNSType.A => blk: {
+            var d = rdata.A.os_addr.in.addr;
+            var v1 = d & 0xff;
+            var v2 = (d >> 8) & 0xff;
+            var v3 = (d >> 16) & 0xff;
+            var v4 = (d >> 24);
+            try stream.print("{}.{}.{}.{}", v4, v3, v2, v1);
+            break :blk;
+        },
+        // TODO: DNSName deserialization
+        else => try stream.print("unknown rdata"),
+    }
+
+    return buf[0..];
 }

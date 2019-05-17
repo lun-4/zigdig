@@ -6,6 +6,7 @@ const packet = @import("packet.zig");
 const proto = @import("proto.zig");
 const resolv = @import("resolvconf.zig");
 const types = @import("types.zig");
+const rdata = @import("rdata.zig");
 
 const DNSPacket = packet.DNSPacket;
 const DNSPacketRCode = packet.DNSPacketRCode;
@@ -60,14 +61,19 @@ fn printPacket(pkt: DNSPacket) !void {
         std.debug.warn(";;name\t\trrtype\tclass\tttl\trdata\n");
 
         for (pkt.answers) |answer| {
+
             // TODO: convert rr_type to better []u8 representation, same for
             // class (IN and A, and etc)
+            var pkt_rdata = try rdata.parseRData(pkt, answer, answer.rdata);
+            var buf: [255]u8 = undefined;
+
             std.debug.warn(
-                "{}.\t{}\t{}\t{}\t;; TODO: dns rdata parse\n",
+                "{}.\t{}\t{}\t{}\t{}\n",
                 try packet.nameToStr(pkt.allocator, answer.name),
                 types.typeToStr(answer.rr_type),
                 answer.class,
                 answer.ttl,
+                try rdata.prettyRData(pkt_rdata, buf[0..]),
             );
         }
     }

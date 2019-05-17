@@ -1,11 +1,11 @@
 // DNS QTYPE
 
-const DNSType = enum(u16) {
+pub const DNSType = enum(u16) {
     A = 1,
     NS,
     MD,
     MF,
-    CNAME,
+    CNAME = 5,
     SOA,
     MB,
     MG,
@@ -18,15 +18,21 @@ const DNSType = enum(u16) {
     MX,
     TXT,
 
+    AAAA = 28,
+    //LOC,
+    //SRV,
+
     // QTYPE only, but merging under DNSType
     // for nicer API
-    AXFR = 252,
-    MAILB,
-    MAILA,
-    WILDCARD,
+
+    // TODO: add them back, maybe?
+    //AXFR = 252,
+    //MAILB,
+    //MAILA,
+    //WILDCARD,
 };
 
-const DNSClass = enum(u16) {
+pub const DNSClass = enum(u16) {
     IN = 1,
     CS,
     CH,
