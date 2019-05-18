@@ -9,9 +9,12 @@ const testing = std.testing;
 const fmt = std.fmt;
 const io = std.io;
 
+const err = @import("error.zig");
+
 const Allocator = std.mem.Allocator;
 const OutError = io.SliceOutStream.Error;
 const InError = io.SliceInStream.Error;
+const DNSError = err.DNSError;
 
 pub const DNSPacketRCode = enum(u4) {
     NoError = 0,
@@ -188,6 +191,13 @@ const LabelComponent = union(LabelComponentTag) {
     Label: []u8,
 };
 
+fn inDeserial(deserializer: var, comptime T: type) DNSError!T {
+    return deserializer.deserialize(T) catch |deserial_error| {
+        debugWarn("got error: {}\n", deserial_error);
+        return DNSError.DeserialFail;
+    };
+}
+
 pub const DNSPacket = struct {
     const Self = @This();
     pub const Error = error{};
@@ -257,41 +267,17 @@ pub const DNSPacket = struct {
         }
     }
 
-    fn simpleDeserializeName(self: *DNSPacket, deserializer: var) ![][]const u8 {
-        // TODO: this is mostly copied code off deserializeName.
-        var labels: [][]u8 = try self.allocator.alloc([]u8, 0);
-        var labels_idx: usize = 0;
-
-        while (true) {
-            var label_size = try deserializer.deserialize(u8);
-            if (label_size == 0) break;
-
-            labels = try self.allocator.realloc(labels, labels_idx + 1);
-            var label = try self.allocator.alloc(u8, label_size);
-
-            // properly deserialize the slice
-            var label_idx: usize = 0;
-            while (label_idx < label_size) : (label_idx += 1) {
-                label[label_idx] = try deserializer.deserialize(u8);
-            }
-
-            labels[labels_idx] = label;
-            labels_idx += 1;
-        }
-        return labels;
-    }
-
     fn deserializePointer(
         self: *DNSPacket,
         ptr_offset_1: u8,
         deserializer: var,
-    ) ![][]const u8 {
+    ) (DNSError || Allocator.Error)![][]const u8 {
         // we need to read another u8 and merge both ptr_prefix_1 and the
         // u8 we read into an u16
 
         // the final offset is u14, but we keep it as u16 to prevent having
         // to do too many complicated things.
-        var ptr_offset_2 = try deserializer.deserialize(u8);
+        var ptr_offset_2 = try inDeserial(deserializer, u8);
 
         // merge them together
         var ptr_offset: u16 = (ptr_offset_1 << 7) | ptr_offset_2;
@@ -322,19 +308,31 @@ pub const DNSPacket = struct {
                 start_slice.len,
             );
 
-            // TODO: we defnitely need recursion here, but it doesn't
-            // quite work as expected. maybe look into error sets
-            return try self.simpleDeserializeName(&new_deserializer);
+            // the old (nonfunctional approach) used infferred error sets
+            // and a simpleDeserializeName to counteract the problems
+            // with just slapping deserializeName in and doing recursion.
+
+            // The problem with inferred error sets is that as soon as you
+            // do recursion, the error set of the function isn't fully analyze
+            // by the time the compiler runs over the recusrive call.
+
+            // recasting deserializer errors into a DNSError and enforcing
+            // an error set on the chain of deserializeName functions fixes
+            // the issue.
+            var name = try self.deserializeName(&new_deserializer);
+            return name.labels;
         } else {
-            // TODO: add ParseErr
-            unreachable;
+            return DNSError.ParseFail;
         }
     }
 
-    fn deserializeLabel(self: *DNSPacket, deserializer: var) !?LabelComponent {
+    fn deserializeLabel(
+        self: *DNSPacket,
+        deserializer: var,
+    ) (DNSError || Allocator.Error)!?LabelComponent {
         // check if label is a pointer, this byte will contain 11 as the starting
         // point of it
-        var ptr_prefix = try deserializer.deserialize(u8);
+        var ptr_prefix = try inDeserial(deserializer, u8);
         if (ptr_prefix == 0) return null;
 
         var bit1 = (ptr_prefix & (1 << 7)) != 0;
@@ -350,7 +348,7 @@ pub const DNSPacket = struct {
             // properly deserialize the slice
             var label_idx: usize = 0;
             while (label_idx < ptr_prefix) : (label_idx += 1) {
-                label[label_idx] = try deserializer.deserialize(u8);
+                label[label_idx] = try inDeserial(deserializer, u8);
             }
 
             return LabelComponent{ .Label = label };
@@ -360,7 +358,10 @@ pub const DNSPacket = struct {
     }
 
     /// Deserializes a DNSName, which represents a slice of slice of u8 ([][]u8)
-    pub fn deserializeName(self: *DNSPacket, deserial: var) !DNSName {
+    pub fn deserializeName(
+        self: *DNSPacket,
+        deserial: var,
+    ) (DNSError || Allocator.Error)!DNSName {
         // allocate empty label slice
         var deserializer = deserial;
         var labels: [][]const u8 = try self.allocator.alloc([]u8, 0);
