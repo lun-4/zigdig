@@ -204,6 +204,9 @@ pub const DNSPacket = struct {
 
     /// Caller owns the memory.
     pub fn init(allocator: *Allocator, raw_bytes: []const u8) !DNSPacket {
+        if (builtin.mode == builtin.Mode.Debug) {
+            debugWarn("packet base64 = '{}'\n", encodeBase64(raw_bytes));
+        }
         var self = DNSPacket{
             .header = DNSHeader.init(),
 
@@ -300,9 +303,6 @@ pub const DNSPacket = struct {
 
         // we need to make a proper [][]const u8 which means
         // re-deserializing labels but using start_slice instead
-        // and since we don't really wish for recursion to occour, we'll
-        // write a simpler version of deserializeName that doesn't
-        // handle pointers.
         var offset_size_opt = std.mem.indexOf(u8, self.raw_bytes[ptr_offset..], "\x00");
 
         if (offset_size_opt) |offset_size| {
@@ -316,6 +316,14 @@ pub const DNSPacket = struct {
                 InError,
             ).init(in_stream);
 
+            debugWarn(
+                "pointer deserial from '{}' (len {})\n",
+                start_slice,
+                start_slice.len,
+            );
+
+            // TODO: we defnitely need recursion here, but it doesn't
+            // quite work as expected. maybe look into error sets
             return try self.simpleDeserializeName(&new_deserializer);
         } else {
             // TODO: add ParseErr
@@ -637,13 +645,17 @@ test "deserialization of reply google.com/A" {
     // TODO: assert values of question slice
 }
 
-fn encodePacket(pkt: DNSPacket) ![]u8 {
-    var out = try serialTest(pkt.allocator, pkt);
+fn encodeBase64(out: []const u8) []const u8 {
     var buffer: [0x10000]u8 = undefined;
     var encoded = buffer[0..base64.Base64Encoder.calcSize(out.len)];
     base64.standard_encoder.encode(encoded, out);
 
     return encoded;
+}
+
+fn encodePacket(pkt: DNSPacket) ![]u8 {
+    var out = try serialTest(pkt.allocator, pkt);
+    return encodeBase64(out);
 }
 
 test "serialization of google.com/A" {
