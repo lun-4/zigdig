@@ -5,6 +5,9 @@ const mem = std.mem;
 
 const NameserverList = [10][]const u8;
 
+/// Process a single line from a resolv.conf file.
+/// Mutates the given NameserverList to contain any new nameservers
+/// from the `nameserver` decl in the line.
 fn processResolvLine(
     line: []const u8,
     nameservers: *NameserverList,
@@ -20,6 +23,8 @@ fn processResolvLine(
     idx.* += 1;
 }
 
+/// Read the `/etc/resolv.conf` file in the system and return a list
+/// of nameserver addresses ([]const u8)
 pub fn readNameservers() !NameserverList {
     var file = try os.File.openRead("/etc/resolv.conf");
     errdefer file.close();

@@ -1,6 +1,11 @@
 # zigdig
 
-dns client in zig
+naive dns client library in zig
+ - serialization and deserialization of dns packets as per rfc1035
+ - supports a subset of rdata (A and AAAA are there, so, for most cases, this
+ will be enough. this library does not follow CNAMEs)
+ - has helpers for reading `/etc/resolv.conf` (not that much, really)
+ - no edns0
 
 ## how do
 
@@ -24,3 +29,10 @@ zig build install --prefix ~/.local/
 zigdig google.com 1
 ```
 
+## using the library
+
+it is recommended to look at zigdig's source on `src/main.zig` to understand
+how things tick using the library, but it boils down to three things:
+ - packet generation and serialization
+ - sending/receiving (via a small shim on top of std.os.posixSocket)
+ - packet deserialization

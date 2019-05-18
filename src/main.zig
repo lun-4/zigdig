@@ -24,6 +24,7 @@ test "zigdig" {
     _ = @import("resolvconf.zig");
 }
 
+/// Print a slice of DNSResource to stderr.
 fn printList(pkt: packet.DNSPacket, resource_list: []packet.DNSResource) !void {
     std.debug.warn(";;name\t\t\trrtype\tclass\tttl\trdata\n");
 
@@ -46,7 +47,8 @@ fn printList(pkt: packet.DNSPacket, resource_list: []packet.DNSResource) !void {
     std.debug.warn("\n");
 }
 
-fn printPacket(pkt: DNSPacket) !void {
+/// Print a packet to stderr.
+pub fn printPacket(pkt: DNSPacket) !void {
     std.debug.warn(
         "id: {}, opcode: {}, rcode: {}\n",
         pkt.header.id,
@@ -100,16 +102,17 @@ fn printPacket(pkt: DNSPacket) !void {
     }
 }
 
+/// Sends pkt over a given socket directed by `addr`, returns a boolean
+/// if this was successful or not. A value of false should direct clients
+/// to follow the next nameserver in the list.
 fn resolve(allocator: *Allocator, addr: std.net.Address, pkt: DNSPacket) !bool {
     var sockfd = try proto.openDNSSocket(addr);
     errdefer std.os.close(sockfd);
 
     var buf = try allocator.alloc(u8, pkt.size());
-
     try proto.sendDNSPacket(sockfd, pkt, buf);
 
     var recvpkt = try proto.recvDNSPacket(sockfd, allocator);
-
     std.debug.warn("recv packet: {}\n", recvpkt.as_str());
 
     // safety checks against unknown udp replies on the same socket
@@ -135,6 +138,10 @@ fn resolve(allocator: *Allocator, addr: std.net.Address, pkt: DNSPacket) !bool {
     }
 }
 
+/// Make a DNSPacket containing a single question out of the question's
+/// QNAME and QTYPE. Both are strings and so are converted to the respective
+/// DNSName and DNSType enum values internally.
+/// Sets a random packet ID.
 fn makeDNSPacket(
     allocator: *std.mem.Allocator,
     name: []u8,
@@ -182,10 +189,7 @@ pub fn main() anyerror!void {
         return error.InvalidArgs;
     });
 
-    std.debug.warn("{} {}\n", name, qtype);
-
     var pkt = try makeDNSPacket(allocator, name, qtype);
-
     std.debug.warn("sending packet: {}\n", pkt.as_str());
 
     // read /etc/resolv.conf for nameserver
