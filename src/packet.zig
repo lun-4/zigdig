@@ -31,6 +31,7 @@ fn debugWarn(comptime format: []const u8, args: ...) void {
     }
 }
 
+/// Describes the header of a DNS packet.
 pub const DNSHeader = packed struct {
     id: u16,
     qr_flag: bool,
@@ -48,6 +49,7 @@ pub const DNSHeader = packed struct {
     nscount: u16,
     arcount: u16,
 
+    /// Initializes a DNSHeader with default values.
     pub fn init() DNSHeader {
         var self = DNSHeader{
             .id = 0,
@@ -68,6 +70,8 @@ pub const DNSHeader = packed struct {
         return self;
     }
 
+    /// Returns a "human-friendly" representation of the header for
+    /// debugging purposes
     pub fn as_str(self: *DNSHeader) ![]u8 {
         var buf: [1024]u8 = undefined;
         return fmt.bufPrint(
@@ -90,9 +94,18 @@ pub const DNSHeader = packed struct {
     }
 };
 
+/// Represents a single DNS domain-name, which is a slice of strings. The
+/// "www.google.com" friendly domain name would be represented in DNS as a
+/// sequence of labels: first "www", then "google", then "com", with a length
+/// prefix for all of them, ending in a null byte.
+///
+/// Due to DNS pointers, it becomes easier to process [][]const u8 instead of
+/// []u8 or []const u8 as you can merge things easily internally.
 pub const DNSName = struct {
     pub labels: [][]const u8,
 
+    /// Returns the total size in bytes of the DNSName as if it was sent
+    /// over a socket.
     pub fn totalSize(self: *const DNSName) usize {
         // by default, add the null octet at the end of it
         var size: usize = 1;
@@ -120,7 +133,7 @@ fn splitCount(data: []const u8, delim: u8) usize {
     return size;
 }
 
-/// Get a DNSName out of a domain name.
+/// Get a DNSName out of a domain name ("www.google.com", for example).
 pub fn toDNSName(allocator: *Allocator, domain: []const u8) !DNSName {
     std.debug.assert(domain.len <= 255);
 
@@ -138,6 +151,8 @@ pub fn toDNSName(allocator: *Allocator, domain: []const u8) !DNSName {
     return DNSName{ .labels = labels[0..] };
 }
 
+/// Convert a DNSName to a human-friendly domain name. Does not add a period
+/// to the end of it.
 pub fn nameToStr(allocator: *Allocator, name: DNSName) ![]const u8 {
     return try std.mem.join(allocator, ".", name.labels);
 }
@@ -156,17 +171,24 @@ test "toDNSName" {
     testing.expect(std.mem.eql(u8, name.labels[2], "com"));
 }
 
+/// Represents a DNS question sent on the packet's question list.
 pub const DNSQuestion = struct {
     pub qname: DNSName,
     pub qtype: u16,
     pub qclass: u16,
 };
 
+/// Represents any RDATA information. This is opaque (as a []u8) because RDATA
+/// is very different than parsing the packet, as there can be many kinds of
+/// DNS types, each with their own RDATA structure. Look over the rdata module
+/// for parsing of OpaqueDNSRData into a nicer DNSRData.
 pub const OpaqueDNSRData = struct {
     len: u16,
     value: []u8,
 };
 
+/// Represents a single DNS resource. Appears on the answer, authority,
+/// and additional lists
 pub const DNSResource = struct {
     name: DNSName,
 
@@ -186,11 +208,25 @@ const LabelComponentTag = enum {
     Label,
 };
 
+/// Represents a Label if it is a pointer to a set of labels OR a single label.
+/// DNSName's, by RFC1035 can appear in three ways (in binary form):
+///  - As a set of labels, ending with a null byte.
+///  - As a set of labels, with a pointer to another set of labels,
+///     ending with null.
+///  - As a pointer to another set of labels.
+/// Recursive parsing is used to convert all pointers into proper labels
+/// for nicer usage of the library.
 const LabelComponent = union(LabelComponentTag) {
     Pointer: [][]const u8,
     Label: []u8,
 };
 
+/// Deserialize a type, but send any error to stderr (if compiled in Debug mode)
+/// This is required due to the recusive requirements of DNSName parsing as
+/// explained in LabelComponent. Zig as of right now does not allow recursion
+/// on functions with infferred error sets, and enforcing an error set
+/// (which is the only solution) caused even more problems due to
+/// io.Deserializer not giving a stable error set at compile-time.
 fn inDeserial(deserializer: var, comptime T: type) DNSError!T {
     return deserializer.deserialize(T) catch |deserial_error| {
         debugWarn("got error: {}\n", deserial_error);
@@ -198,6 +234,29 @@ fn inDeserial(deserializer: var, comptime T: type) DNSError!T {
     };
 }
 
+/// Give the size, in bytes, of the binary representation of a resource.
+fn resourceSize(resource: DNSResource) usize {
+    var res_size: usize = 0;
+
+    // name for the resource
+    res_size += resource.name.totalSize();
+
+    // rr_type, class, ttl, rdlength are 3 u16's and one u32.
+    res_size += @sizeOf(u16) * 3;
+    res_size += @sizeOf(u32);
+
+    // rdata
+    res_size += @sizeOf(u16);
+    res_size += resource.rdata.len * @sizeOf(u8);
+
+    return res_size;
+}
+
+/// Represents a full DNS packet, including all conversion to and from binary.
+/// This struct supports the io.Serializer and io.Deserializer interfaces.
+/// The serialization of DNS packets only serializes the question list. Be
+/// careful with adding things other than questions, as the header will be
+/// modified, but the lists won't appear in the final result.
 pub const DNSPacket = struct {
     const Self = @This();
     pub const Error = error{};
@@ -212,11 +271,16 @@ pub const DNSPacket = struct {
 
     pub allocator: *Allocator,
 
+    /// Initialize a DNSPacket with an allocator (for internal parsing)
+    /// and a raw_bytes slice for pointer deserialization purposes (as they
+    /// point to an offset *inside* the existing DNS packet's binary)
     /// Caller owns the memory.
+    /// There is an automatic allocation of empty slices for later use.
     pub fn init(allocator: *Allocator, raw_bytes: []const u8) !DNSPacket {
         if (builtin.mode == builtin.Mode.Debug) {
             debugWarn("packet base64 = '{}'\n", encodeBase64(raw_bytes));
         }
+
         var self = DNSPacket{
             .header = DNSHeader.init(),
 
@@ -233,11 +297,9 @@ pub const DNSPacket = struct {
         return self;
     }
 
-    pub fn as_str(self: *DNSPacket) ![]u8 {
-        var buf: [1024]u8 = undefined;
-        return try fmt.bufPrint(&buf, "DNSPacket<{}>", self.header.as_str());
-    }
-
+    /// Return if this packet makes sense, if the headers' provided lengths
+    /// match the lengths of the given packets. This is not checked when
+    /// serializing.
     pub fn is_valid(self: *DNSPacket) bool {
         return (self.questions.len == self.header.qdcount and
             self.answers.len == self.header.ancount and
@@ -512,29 +574,10 @@ pub const DNSPacket = struct {
         self.questions[self.header.qdcount - 1] = question;
     }
 
-    fn resourceSize(self: DNSPacket, resource: DNSResource) usize {
-        var res_size: usize = 0;
-
-        // name for the resource
-        res_size += resource.name.totalSize();
-
-        // rr_type, class, ttl, rdlength are 3 u16's and one u32.
-        res_size += @sizeOf(u16) * 3;
-        res_size += @sizeOf(u32);
-
-        // rdata
-        res_size += @sizeOf(u16);
-        res_size += resource.rdata.len * @sizeOf(u8);
-
-        return res_size;
-    }
-
     fn sliceSizes(self: DNSPacket) usize {
         var extra_size: usize = 0;
 
         for (self.questions) |question| {
-            // DNSName is composed of labels, each label is length-prefixed,
-            // so the total amount of bytes is ()
             extra_size += question.qname.totalSize();
 
             // add both qtype and qclass (both u16's)
@@ -544,13 +587,14 @@ pub const DNSPacket = struct {
 
         // TODO: the DNSResource slice sizes
         for (self.answers) |answer| {
-            extra_size += self.resourceSize(answer);
+            extra_size += resourceSize(answer);
         }
 
         return extra_size;
     }
 
-    /// Returns the size in bytes of the packet for (de)serialization purposes.
+    /// Returns the size in bytes of the binary representation of the packet
+    /// for serialization purposes.
     pub fn size(self: DNSPacket) usize {
         return @sizeOf(DNSHeader) + self.sliceSizes();
     }
