@@ -24,6 +24,28 @@ test "zigdig" {
     _ = @import("resolvconf.zig");
 }
 
+fn printList(pkt: packet.DNSPacket, resource_list: []packet.DNSResource) !void {
+    std.debug.warn(";;name\t\t\trrtype\tclass\tttl\trdata\n");
+
+    for (resource_list) |resource| {
+
+        // TODO: convert rr_type to better []u8 representation, same for
+        // class (IN and A, and etc)
+        var pkt_rdata = try rdata.parseRData(pkt, resource, resource.rdata);
+
+        std.debug.warn(
+            "{}.\t{}\t{}\t{}\t{}\n",
+            try packet.nameToStr(pkt.allocator, resource.name),
+            types.typeToStr(resource.rr_type),
+            resource.class,
+            resource.ttl,
+            try rdata.prettyRData(pkt.allocator, pkt_rdata),
+        );
+    }
+
+    std.debug.warn("\n");
+}
+
 fn printPacket(pkt: DNSPacket) !void {
     std.debug.warn(
         "id: {}, opcode: {}, rcode: {}\n",
@@ -42,7 +64,7 @@ fn printPacket(pkt: DNSPacket) !void {
 
     if (pkt.header.qdcount > 0) {
         std.debug.warn(";;-- question --\n");
-        std.debug.warn(";;qname\t\tqtype\tqclass\n");
+        std.debug.warn(";;qname\tqtype\tqclass\n");
 
         for (pkt.questions) |question| {
             std.debug.warn(
@@ -58,23 +80,23 @@ fn printPacket(pkt: DNSPacket) !void {
 
     if (pkt.header.ancount > 0) {
         std.debug.warn(";; -- answer --\n");
-        std.debug.warn(";;name\t\trrtype\tclass\tttl\trdata\n");
+        try printList(pkt, pkt.answers);
+    } else {
+        std.debug.warn(";; no answer\n");
+    }
 
-        for (pkt.answers) |answer| {
+    if (pkt.header.nscount > 0) {
+        std.debug.warn(";; -- authority --\n");
+        try printList(pkt, pkt.authority);
+    } else {
+        std.debug.warn(";; no authority\n\n");
+    }
 
-            // TODO: convert rr_type to better []u8 representation, same for
-            // class (IN and A, and etc)
-            var pkt_rdata = try rdata.parseRData(pkt, answer, answer.rdata);
-
-            std.debug.warn(
-                "{}.\t{}\t{}\t{}\t{}\n",
-                try packet.nameToStr(pkt.allocator, answer.name),
-                types.typeToStr(answer.rr_type),
-                answer.class,
-                answer.ttl,
-                try rdata.prettyRData(pkt.allocator, pkt_rdata),
-            );
-        }
+    if (pkt.header.ancount > 0) {
+        std.debug.warn(";; -- additional --\n");
+        try printList(pkt, pkt.additional);
+    } else {
+        std.debug.warn(";; no additional\n\n");
     }
 }
 

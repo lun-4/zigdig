@@ -302,11 +302,11 @@ pub const DNSPacket = struct {
                 InError,
             ).init(in_stream);
 
-            debugWarn(
-                "pointer deserial from '{}' (len {})\n",
-                start_slice,
-                start_slice.len,
-            );
+            //debugWarn(
+            //    "pointer deserial from '{}' (len {})\n",
+            //    start_slice,
+            //    start_slice.len,
+            //);
 
             // the old (nonfunctional approach) used infferred error sets
             // and a simpleDeserializeName to counteract the problems
