@@ -11,6 +11,7 @@ const InError = io.SliceInStream.Error;
 const OutError = io.SliceOutStream.Error;
 const DNSType = types.DNSType;
 
+/// DNS RDATA representation to a "native-r" type for nicer usage.
 const DNSRData = union(types.DNSType) {
     A: std.net.Address,
 
@@ -113,6 +114,9 @@ fn printName(
     }
 }
 
+/// Prettify a given DNSRData union variable. Returns a string with e.g
+/// a string representation of an ipv4 address, or the human-readable version
+/// of a DNSName.
 pub fn prettyRData(allocator: *std.mem.Allocator, rdata: DNSRData) ![]const u8 {
     var buf = try allocator.alloc(u8, 256);
 
