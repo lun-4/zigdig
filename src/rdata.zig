@@ -144,6 +144,51 @@ pub fn parseRData(
     return rdata;
 }
 
+/// Serialize a DNSName
+fn serialName(serializer: var, name: packet.DNSName) !void {
+    try serializer.serialize(name.labels.len);
+    for (name.labels) |label| {
+        try serializer.serialize(label);
+    }
+}
+
+/// Serialize a given DNSRData into OpaqueDNSRData.
+pub fn serializeRData(
+    pkt: *packet.DNSPacket,
+    rdata: DNSRData,
+) !packet.OpaqueDNSRData {
+    // TODO a nice idea would be to maybe implement a fixed buffer allocator
+    // or a way for the serializer's underlying stream
+    // to allocate memory on-demand?
+    var buf = try allocator.alloc(u8, 1024);
+
+    var out = io.SliceOutStream.init(buf);
+    var out_stream = &out.stream;
+    var serializer = std.io.Serializer(
+        .Big,
+        .Bit,
+        std.io.OutError,
+    ).init(out_stream);
+
+    switch (rdata) {
+        .NS => try serialName(serializer, rdata.NS),
+        .MD => try serialName(serializer, rdata.MD),
+        .MF => try serialName(serializer, rdata.MF),
+        .MB => try serialName(serializer, rdata.MB),
+        .MG => try serialName(serializer, rdata.MG),
+        .MR => try serialName(serializer, rdata.MR),
+        .CNAME => try serialName(serializer, rdata.CNAME),
+
+        // TODO SOA
+
+        .PTR => try serialName(serializer, rdata.PTR),
+
+        // TODO MX
+
+        else => return DNSError.RDATANotSupported,
+    }
+}
+
 fn printName(
     stream: *std.io.OutStream(OutError),
     name: packet.DNSName,

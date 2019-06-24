@@ -328,8 +328,6 @@ pub const DNSPacket = struct {
             try serializer.serialize(resource.ttl);
 
             try serializer.serialize(resource.rdata.len);
-
-            // TODO proper RDATA serialization, as this is OpaqueDNSRData
             try serializer.serialize(resource.rdata.value);
         }
     }
