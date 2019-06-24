@@ -105,7 +105,7 @@ pub fn printPacket(pkt: DNSPacket) !void {
 /// Sends pkt over a given socket directed by `addr`, returns a boolean
 /// if this was successful or not. A value of false should direct clients
 /// to follow the next nameserver in the list.
-fn resolve(allocator: *Allocator, addr: std.net.Address, pkt: DNSPacket) !bool {
+fn resolve(allocator: *Allocator, addr: *std.net.Address, pkt: DNSPacket) !bool {
     var sockfd = try proto.openDNSSocket(addr);
     errdefer std.os.close(sockfd);
 
@@ -113,7 +113,7 @@ fn resolve(allocator: *Allocator, addr: std.net.Address, pkt: DNSPacket) !bool {
     try proto.sendDNSPacket(sockfd, pkt, buf);
 
     var recvpkt = try proto.recvDNSPacket(sockfd, allocator);
-    std.debug.warn("recv packet: {}\n", recvpkt.as_str());
+    std.debug.warn("recv packet: {}\n", recvpkt.header.as_str());
 
     // safety checks against unknown udp replies on the same socket
     if (recvpkt.header.id != pkt.header.id) return MainDNSError.UnknownReplyId;
@@ -151,7 +151,7 @@ fn makeDNSPacket(
     var pkt = try DNSPacket.init(allocator, ""[0..]);
 
     // set random u16 as the id + all the other goodies in the header
-    var r = std.rand.DefaultPrng.init(std.os.time.timestamp());
+    var r = std.rand.DefaultPrng.init(std.time.timestamp());
     const random_id = r.random.int(u16);
     pkt.header.id = random_id;
     pkt.header.rd = true;
@@ -170,12 +170,11 @@ fn makeDNSPacket(
 }
 
 pub fn main() anyerror!void {
-    var da = std.heap.DirectAllocator.init();
-    var arena = std.heap.ArenaAllocator.init(&da.allocator);
+    var arena = std.heap.ArenaAllocator.init(std.heap.direct_allocator);
     errdefer arena.deinit();
 
     const allocator = &arena.allocator;
-    var args_it = os.args();
+    var args_it = std.process.args();
 
     _ = args_it.skip();
 
@@ -190,7 +189,7 @@ pub fn main() anyerror!void {
     });
 
     var pkt = try makeDNSPacket(allocator, name, qtype);
-    std.debug.warn("sending packet: {}\n", pkt.as_str());
+    std.debug.warn("sending packet: {}\n", pkt.header.as_str());
 
     // read /etc/resolv.conf for nameserver
     var nameservers = try resolv.readNameservers();
@@ -204,6 +203,6 @@ pub fn main() anyerror!void {
         var ip4addr = try std.net.parseIp4(nameserver);
         var addr = std.net.Address.initIp4(ip4addr, 53);
 
-        if (try resolve(allocator, addr, pkt)) break;
+        if (try resolve(allocator, &addr, pkt)) break;
     }
 }

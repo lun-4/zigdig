@@ -4,7 +4,6 @@ const net = std.net;
 const os = std.os;
 const io = std.io;
 
-const posix = os.posix;
 const Allocator = std.mem.Allocator;
 
 const packet = @import("packet.zig");
@@ -16,15 +15,14 @@ const OutError = io.SliceOutStream.Error;
 const InError = io.SliceInStream.Error;
 
 /// Returns the socket file descriptor for an UDP socket.
-pub fn openDNSSocket(addr: net.Address) !i32 {
-    var sockfd = try os.posixSocket(
-        posix.AF_INET,
-        posix.SOCK_DGRAM,
-        posix.PROTO_udp,
+pub fn openDNSSocket(addr: *net.Address) !i32 {
+    var sockfd = try os.socket(
+        os.AF_INET,
+        os.SOCK_DGRAM,
+        os.PROTO_udp,
     );
 
-    const const_addr = &addr.os_addr;
-    try os.posixConnect(sockfd, const_addr);
+    try os.connect(sockfd, &addr.os_addr, @sizeOf(os.sockaddr));
     return sockfd;
 }
 
@@ -36,7 +34,7 @@ pub fn sendDNSPacket(sockfd: i32, pkt: DNSPacket, buffer: []u8) !void {
     try serializer.serialize(pkt);
     try serializer.flush();
 
-    try os.posixWrite(sockfd, buffer);
+    try os.write(sockfd, buffer);
 }
 
 fn base64Encode(data: []u8) void {
@@ -48,7 +46,7 @@ fn base64Encode(data: []u8) void {
 
 pub fn recvDNSPacket(sockfd: i32, allocator: *Allocator) !DNSPacket {
     var buffer = try allocator.alloc(u8, 512);
-    var byte_count = try os.posixRead(sockfd, buffer);
+    var byte_count = try os.read(sockfd, buffer);
     if (byte_count == 0) return DNSError.NetError;
 
     var packet_slice = buffer[0..byte_count];

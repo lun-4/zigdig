@@ -26,7 +26,7 @@ fn processResolvLine(
 /// Read the `/etc/resolv.conf` file in the system and return a list
 /// of nameserver addresses ([]const u8)
 pub fn readNameservers() !NameserverList {
-    var file = try os.File.openRead("/etc/resolv.conf");
+    var file = try std.fs.File.openRead("/etc/resolv.conf");
     errdefer file.close();
 
     var nameservers: NameserverList = undefined;

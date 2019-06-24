@@ -52,7 +52,7 @@ fn toUpper(str: []const u8, out: []u8) void {
 
 /// Convert a given string to an integer representing a DNSType.
 pub fn strToType(str: []const u8) !u16 {
-    var uppercased: [16]u8 = []u8{0} ** 16;
+    var uppercased: [16]u8 = [_]u8{0} ** 16;
     toUpper(str, uppercased[0..]);
 
     var to_compare: [16]u8 = undefined;
