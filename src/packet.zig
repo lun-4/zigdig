@@ -309,11 +309,34 @@ pub const DNSPacket = struct {
             self.additional.len == self.header.arcount);
     }
 
+    /// Serialize a DNSResource list.
+    fn serializeRList(
+        self: DNSPacket,
+        serializer: var,
+        rlist: []DNSResource,
+    ) !void {
+        for (rlist) |resource| {
+            // serialize the name for the given resource
+            try serializer.serialize(resource.name.labels.len);
+
+            for (resource.name.labels) |label| {
+                try serializer.serialize(label);
+            }
+
+            try serializer.serialize(resource.rr_type);
+            try serializer.serialize(resource.class);
+            try serializer.serialize(resource.ttl);
+
+            try serializer.serialize(resource.rdata.len);
+
+            // TODO proper RDATA serialization, as this is OpaqueDNSRData
+            try serializer.serialize(resource.rdata.value);
+        }
+    }
+
     pub fn serialize(self: DNSPacket, serializer: var) !void {
         try serializer.serialize(self.header);
 
-        // TODO: for now, we're only serializing our questions due to this
-        // being a client library, not a server library.
         for (self.questions) |question| {
             for (question.qname.labels) |label| {
                 try serializer.serialize(@intCast(u8, label.len));
@@ -329,6 +352,10 @@ pub const DNSPacket = struct {
             try serializer.serialize(question.qtype);
             try serializer.serialize(@enumToInt(question.qclass));
         }
+
+        try self.serializeRList(serializer, self.answers);
+        try self.serializeRList(serializer, self.authority);
+        try self.serializeRList(serializer, self.additional);
     }
 
     fn deserializePointer(
