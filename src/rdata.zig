@@ -95,8 +95,14 @@ pub fn parseRData(
         .NS => DNSRData{ .NS = try pkt.deserializeName(&deserializer) },
         .CNAME => DNSRData{ .CNAME = try pkt.deserializeName(&deserializer) },
         .PTR => DNSRData{ .PTR = try pkt.deserializeName(&deserializer) },
+        .MD => DNSRData{ .MD = try pkt.deserializeName(&deserializer) },
+        .MF => DNSRData{ .MF = try pkt.deserializeName(&deserializer) },
+
+        // TODO MX
+        // TODO SOA
 
         else => blk: {
+            std.debug.warn("invalid rdata type: {}\n", rdata_enum);
             return DNSError.RDATANotSupported;
         },
     };
@@ -156,7 +162,11 @@ pub fn prettyRData(allocator: *std.mem.Allocator, rdata: DNSRData) ![]const u8 {
         .NS => try printName(stream, rdata.NS),
         .PTR => try printName(stream, rdata.PTR),
 
-        // TODO: DNSName deserialization
+        .MD => try printName(stream, rdata.MD),
+        .MF => try printName(stream, rdata.MF),
+
+        // TODO SOA
+
         else => try stream.write("unsupported rdata"),
     }
 
