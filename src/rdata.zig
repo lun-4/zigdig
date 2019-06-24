@@ -21,6 +21,11 @@ pub const SOAData = struct {
     minimum: u32,
 };
 
+pub const MXData = struct {
+    preference: u16,
+    exchange: packet.DNSName,
+};
+
 /// DNS RDATA representation to a "native-r" type for nicer usage.
 pub const DNSRData = union(types.DNSType) {
     A: std.net.Address,
@@ -56,10 +61,7 @@ pub const DNSRData = union(types.DNSType) {
         rmailbx: packet.DNSName,
         emailbx: packet.DNSName,
     },
-    MX: struct {
-        preference: u16,
-        exchange: packet.DNSName,
-    },
+    MX: MXData,
     TXT: [][]const u8,
 };
 
@@ -98,6 +100,14 @@ pub fn parseRData(
         .NS => DNSRData{ .NS = try pkt.deserializeName(&deserializer) },
         .CNAME => DNSRData{ .CNAME = try pkt.deserializeName(&deserializer) },
         .PTR => DNSRData{ .PTR = try pkt.deserializeName(&deserializer) },
+        .MX => blk: {
+            break :blk DNSRData{
+                .MX = MXData{
+                    .preference = try deserializer.deserialize(u16),
+                    .exchange = try pkt.deserializeName(&deserializer),
+                },
+            };
+        },
         .MD => DNSRData{ .MD = try pkt.deserializeName(&deserializer) },
         .MF => DNSRData{ .MF = try pkt.deserializeName(&deserializer) },
 
@@ -189,9 +199,7 @@ pub fn prettyRData(allocator: *std.mem.Allocator, rdata: DNSRData) ![]const u8 {
         .MD => try printName(stream, rdata.MD),
         .MF => try printName(stream, rdata.MF),
 
-        .SOA => blk: {
-            var soa = rdata.SOA;
-
+        .SOA => |soa| blk: {
             // TODO: this is not the most elegant solution, maybe use nameToStr?
             // we could even make nameToStr a function on DNSName.
             try printName(stream, soa.mname);
@@ -207,6 +215,11 @@ pub fn prettyRData(allocator: *std.mem.Allocator, rdata: DNSRData) ![]const u8 {
                 soa.minimum,
             );
             break :blk;
+        },
+
+        .MX => |mxdata| blk: {
+            try stream.print("{} ", mxdata.preference);
+            try printName(stream, mxdata.exchange);
         },
 
         else => try stream.write("unsupported rdata"),
