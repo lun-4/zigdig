@@ -193,6 +193,7 @@ fn printName(
     stream: *std.io.OutStream(OutError),
     name: packet.DNSName,
 ) !void {
+    // This doesn't use the name since we can just write to the stream.
     for (name.labels) |label| {
         try stream.print("{}", label);
         try stream.print(".");
@@ -245,12 +246,11 @@ pub fn prettyRData(allocator: *std.mem.Allocator, rdata: DNSRData) ![]const u8 {
         .MF => try printName(stream, rdata.MF),
 
         .SOA => |soa| blk: {
-            // TODO: this is not the most elegant solution, maybe use nameToStr?
-            // we could even make nameToStr a function on DNSName.
             try printName(stream, soa.mname);
             try stream.write(" ");
             try printName(stream, soa.rname);
             try stream.write(" ");
+
             try stream.print(
                 "{} {} {} {} {}",
                 soa.serial,

@@ -38,7 +38,7 @@ fn printList(pkt: packet.DNSPacket, resource_list: []packet.DNSResource) !void {
 
         std.debug.warn(
             "{}.\t{}\t{}\t{}\t{}\n",
-            try packet.nameToStr(pkt.allocator, resource.name),
+            try resource.name.toStr(pkt.allocator),
             types.typeToStr(resource.rr_type),
             resource.class,
             resource.ttl,
@@ -73,7 +73,7 @@ pub fn printPacket(pkt: DNSPacket) !void {
         for (pkt.questions) |question| {
             std.debug.warn(
                 "{}.\t{}\t{}\n",
-                packet.nameToStr(pkt.allocator, question.qname),
+                try question.qname.toStr(pkt.allocator),
                 types.typeToStr(question.qtype),
                 types.classToStr(question.qclass),
             );

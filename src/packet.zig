@@ -120,6 +120,12 @@ pub const DNSName = struct {
 
         return size;
     }
+
+    /// Convert a DNSName to a human-friendly domain name.
+    /// Does not add a period to the end of it.
+    pub fn toStr(self: *const DNSName, allocator: *Allocator) ![]const u8 {
+        return try std.mem.join(allocator, ".", self.labels);
+    }
 };
 
 /// Return the amount of elements as if they were split by `delim`.
@@ -151,12 +157,6 @@ pub fn toDNSName(allocator: *Allocator, domain: []const u8) !DNSName {
     }
 
     return DNSName{ .labels = labels[0..] };
-}
-
-/// Convert a DNSName to a human-friendly domain name. Does not add a period
-/// to the end of it.
-pub fn nameToStr(allocator: *Allocator, name: DNSName) ![]const u8 {
-    return try std.mem.join(allocator, ".", name.labels);
 }
 
 test "toDNSName" {
