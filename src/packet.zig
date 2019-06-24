@@ -575,22 +575,21 @@ pub const DNSPacket = struct {
     }
 
     fn sliceSizes(self: DNSPacket) usize {
-        var extra_size: usize = 0;
+        var size: usize = 0;
 
         for (self.questions) |question| {
-            extra_size += question.qname.totalSize();
+            size += question.qname.totalSize();
 
             // add both qtype and qclass (both u16's)
-            extra_size += @sizeOf(u16);
-            extra_size += @sizeOf(u16);
+            size += @sizeOf(u16);
+            size += @sizeOf(u16);
         }
 
-        // TODO: the DNSResource slice sizes
         for (self.answers) |answer| {
-            extra_size += resourceSize(answer);
+            size += resourceSize(answer);
         }
 
-        return extra_size;
+        return size;
     }
 
     /// Returns the size in bytes of the binary representation of the packet
