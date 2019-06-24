@@ -11,8 +11,18 @@ const InError = io.SliceInStream.Error;
 const OutError = io.SliceOutStream.Error;
 const DNSType = types.DNSType;
 
+pub const SOAData = struct {
+    mname: packet.DNSName,
+    rname: packet.DNSName,
+    serial: u32,
+    refresh: u32,
+    retry: u32,
+    expire: u32,
+    minimum: u32,
+};
+
 /// DNS RDATA representation to a "native-r" type for nicer usage.
-const DNSRData = union(types.DNSType) {
+pub const DNSRData = union(types.DNSType) {
     A: std.net.Address,
 
     // TODO: move this to std.net.Address once the stdlib has fixes
@@ -22,15 +32,8 @@ const DNSRData = union(types.DNSType) {
     MD: packet.DNSName,
     MF: packet.DNSName,
     CNAME: packet.DNSName,
-    SOA: struct {
-        mname: packet.DNSName,
-        rname: packet.DNSName,
-        serial: u32,
-        refresh: u32,
-        retry: u32,
-        expire: u32,
-        minimum: u32,
-    },
+    SOA: SOAData,
+
     MB: packet.DNSName,
     MG: packet.DNSName,
     MR: packet.DNSName,
@@ -98,8 +101,29 @@ pub fn parseRData(
         .MD => DNSRData{ .MD = try pkt.deserializeName(&deserializer) },
         .MF => DNSRData{ .MF = try pkt.deserializeName(&deserializer) },
 
+        .SOA => blk: {
+            var mname = try pkt.deserializeName(&deserializer);
+            var rname = try pkt.deserializeName(&deserializer);
+            var serial = try deserializer.deserialize(u32);
+            var refresh = try deserializer.deserialize(u32);
+            var retry = try deserializer.deserialize(u32);
+            var expire = try deserializer.deserialize(u32);
+            var minimum = try deserializer.deserialize(u32);
+
+            break :blk DNSRData{
+                .SOA = SOAData{
+                    .mname = mname,
+                    .rname = rname,
+                    .serial = serial,
+                    .refresh = refresh,
+                    .retry = retry,
+                    .expire = expire,
+                    .minimum = minimum,
+                },
+            };
+        },
+
         // TODO MX
-        // TODO SOA
 
         else => blk: {
             std.debug.warn("invalid rdata type: {}\n", rdata_enum);
@@ -165,7 +189,25 @@ pub fn prettyRData(allocator: *std.mem.Allocator, rdata: DNSRData) ![]const u8 {
         .MD => try printName(stream, rdata.MD),
         .MF => try printName(stream, rdata.MF),
 
-        // TODO SOA
+        .SOA => blk: {
+            var soa = rdata.SOA;
+
+            // TODO: this is not the most elegant solution, maybe use nameToStr?
+            // we could even make nameToStr a function on DNSName.
+            try printName(stream, soa.mname);
+            try stream.write(" ");
+            try printName(stream, soa.rname);
+            try stream.write(" ");
+            try stream.print(
+                "{} {} {} {} {}",
+                soa.serial,
+                soa.refresh,
+                soa.retry,
+                soa.expire,
+                soa.minimum,
+            );
+            break :blk;
+        },
 
         else => try stream.write("unsupported rdata"),
     }

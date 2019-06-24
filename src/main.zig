@@ -10,6 +10,7 @@ const rdata = @import("rdata.zig");
 
 const DNSPacket = packet.DNSPacket;
 const DNSPacketRCode = packet.DNSPacketRCode;
+const DNSClass = types.DNSClass;
 const Allocator = std.mem.Allocator;
 
 const MainDNSError = error{
@@ -26,6 +27,7 @@ test "zigdig" {
 
 /// Print a slice of DNSResource to stderr.
 fn printList(pkt: packet.DNSPacket, resource_list: []packet.DNSResource) !void {
+    // TODO the formatting here is not good...
     std.debug.warn(";;name\t\t\trrtype\tclass\tttl\trdata\n");
 
     for (resource_list) |resource| {
@@ -160,7 +162,7 @@ fn makeDNSPacket(
         .qname = try packet.toDNSName(allocator, name),
         .qtype = qtype_i,
 
-        // TODO: add a DNSClass enum
+        // TODO: use DNSClass
         .qclass = 1,
     };
 
