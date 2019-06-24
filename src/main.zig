@@ -75,7 +75,7 @@ pub fn printPacket(pkt: DNSPacket) !void {
                 "{}.\t{}\t{}\n",
                 packet.nameToStr(pkt.allocator, question.qname),
                 types.typeToStr(question.qtype),
-                question.qclass,
+                types.classToStr(question.qclass),
             );
         }
 
@@ -161,9 +161,7 @@ fn makeDNSPacket(
     var question = packet.DNSQuestion{
         .qname = try packet.toDNSName(allocator, name),
         .qtype = qtype_i,
-
-        // TODO: use DNSClass
-        .qclass = 1,
+        .qclass = DNSClass.IN,
     };
 
     try pkt.addQuestion(question);

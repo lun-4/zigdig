@@ -44,6 +44,19 @@ pub const DNSClass = enum(u16) {
     WILDCARD = 255,
 };
 
+/// Convert from a DNSClass to a friendly string
+pub fn classToStr(class: DNSClass) []const u8 {
+    var as_str = switch (class) {
+        .IN => "IN",
+        .CS => "CS",
+        .CH => "CH",
+        .HS => "HS",
+        else => "unknown",
+    };
+
+    return as_str[0..];
+}
+
 fn toUpper(str: []const u8, out: []u8) void {
     for (str) |c, i| {
         out[i] = std.ascii.toUpper(c);

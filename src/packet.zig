@@ -1,5 +1,6 @@
 const std = @import("std");
 const builtin = @import("builtin");
+const types = @import("types.zig");
 
 const base64 = std.base64;
 
@@ -15,6 +16,7 @@ const Allocator = std.mem.Allocator;
 const OutError = io.SliceOutStream.Error;
 const InError = io.SliceInStream.Error;
 const DNSError = err.DNSError;
+const DNSClass = types.DNSClass;
 
 pub const DNSPacketRCode = enum(u4) {
     NoError = 0,
@@ -175,7 +177,7 @@ test "toDNSName" {
 pub const DNSQuestion = struct {
     pub qname: DNSName,
     pub qtype: u16,
-    pub qclass: u16,
+    pub qclass: DNSClass,
 };
 
 /// Represents any RDATA information. This is opaque (as a []u8) because RDATA
@@ -325,7 +327,7 @@ pub const DNSPacket = struct {
             try serializer.serialize(u8(0));
 
             try serializer.serialize(question.qtype);
-            try serializer.serialize(question.qclass);
+            try serializer.serialize(@enumToInt(question.qclass));
         }
     }
 
@@ -548,7 +550,7 @@ pub const DNSPacket = struct {
             var question = DNSQuestion{
                 .qname = name,
                 .qtype = qtype,
-                .qclass = qclass,
+                .qclass = @intToEnum(DNSClass, qclass),
             };
 
             self.questions[i] = question;
