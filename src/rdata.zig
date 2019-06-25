@@ -46,7 +46,7 @@ pub const DNSRData = union(types.DNSType) {
     // ????
     NULL: void,
 
-    // TODO
+    // TODO WKS bit map
     WKS: struct {
         addr: u32,
         proto: u8,
@@ -133,8 +133,6 @@ pub fn parseRData(
             };
         },
 
-        // TODO MX
-
         else => blk: {
             std.debug.warn("invalid rdata type: {}\n", rdata_enum);
             return DNSError.RDATANotSupported;
@@ -179,11 +177,23 @@ pub fn serializeRData(
         .MR => try serialName(serializer, rdata.MR),
         .CNAME => try serialName(serializer, rdata.CNAME),
 
-        // TODO SOA
+        .SOA => |soa_data| blk: {
+            try serialName(serializer, soa_data.mname);
+            try serialName(serializer, soa_data.rname);
+
+            try serializer.serialize(soa_data.serial);
+            try serializer.serialize(soa_data.refresh);
+            try serializer.serialize(soa_data.retry);
+            try serializer.serialize(soa_data.expire);
+            try serializer.serialize(soa_data.minimum);
+        },
 
         .PTR => try serialName(serializer, rdata.PTR),
 
-        // TODO MX
+        .MX => |mxdata| blk: {
+            try serializer.serialize(mxdata.preference);
+            try serialName(serializer, mxdata.exchange);
+        },
 
         else => return DNSError.RDATANotSupported,
     }
