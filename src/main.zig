@@ -31,16 +31,13 @@ fn printList(pkt: packet.DNSPacket, resource_list: []packet.DNSResource) !void {
     std.debug.warn(";;name\t\t\trrtype\tclass\tttl\trdata\n");
 
     for (resource_list) |resource| {
-
-        // TODO: convert rr_type to better []u8 representation, same for
-        // class (IN and A, and etc)
         var pkt_rdata = try rdata.parseRData(pkt, resource, resource.rdata);
 
         std.debug.warn(
             "{}.\t{}\t{}\t{}\t{}\n",
             try resource.name.toStr(pkt.allocator),
             types.typeToStr(resource.rr_type),
-            resource.class,
+            types.classToStr(@intToEnum(types.DNSClass, resource.class)),
             resource.ttl,
             try rdata.prettyRData(pkt.allocator, pkt_rdata),
         );
