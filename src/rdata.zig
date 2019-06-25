@@ -210,13 +210,39 @@ fn printName(
     }
 }
 
+// This maybe should be provided by the standard library in the future.
+fn strspn(s1: []const u8, s2: []const u8) usize {
+    var bytes: usize = 0;
+
+    while (bytes < s1.len and bytes + s2.len < s1.len) {
+        if (std.mem.compare(
+            u8,
+            s1[bytes .. bytes + s2.len],
+            s2,
+        ) == std.mem.Compare.Equal) {
+            bytes += s2.len;
+        } else {
+            break;
+        }
+    }
+
+    return bytes;
+}
+
+test "strspn" {
+    var val = "abcabc"[0..];
+    std.testing.expectEqual(usize(6), strspn(val, "abc"));
+    std.testing.expectEqual(usize(2), strspn(val, "ab"));
+    std.testing.expectEqual(usize(6), strspn(":0:0:0:681b:bcb3:", ":0"));
+}
+
 /// Prettify a given DNSRData union variable. Returns a string with e.g
 /// a string representation of an ipv4 address, or the human-readable version
 /// of a DNSName.
 pub fn prettyRData(allocator: *std.mem.Allocator, rdata: DNSRData) ![]const u8 {
-    var buf = try allocator.alloc(u8, 256);
+    var minibuf = try allocator.alloc(u8, 256);
 
-    var out = io.SliceOutStream.init(buf);
+    var out = io.SliceOutStream.init(minibuf);
     var stream = &out.stream;
 
     switch (rdata) {
@@ -230,21 +256,89 @@ pub fn prettyRData(allocator: *std.mem.Allocator, rdata: DNSRData) ![]const u8 {
             break :blk;
         },
 
+        // thank god for musl. this ipv6 repr code is ported from it.
+        // Copyright (c) 2005-2014 Rich Felker, et al.
         DNSType.AAAA => blk: {
-            var prev_zero: bool = false;
-            for (rdata.AAAA) |byte| {
-                if (prev_zero and byte == 0) {
-                    // if previous byte was 0 (and we're also 0)
-                    // we shouldn't need to do anything
-                } else {
-                    try stream.print(":");
-                    if (byte == 0) {
-                        prev_zero = true;
-                        continue;
-                    }
-                    try stream.print("{x}", byte);
+            var a = rdata.AAAA;
+            var buf_main: []u8 = try allocator.alloc(u8, 100);
+            var buf = buf_main[0..];
+
+            // ipv4 sentry value
+            const sentry = [_]u8{ 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 255, 255 };
+
+            if (std.mem.compare(
+                u8,
+                a[0..12],
+                sentry,
+            ) != std.mem.Compare.Equal) {
+                buf = try std.fmt.bufPrint(
+                    buf[0..],
+                    "{x}:{x}:{x}:{x}:{x}:{x}:{x}:{x}",
+                    256 * u16(a[0]) + a[1],
+                    256 * u16(a[2]) + a[3],
+                    256 * u16(a[4]) + a[5],
+                    256 * u16(a[6]) + a[7],
+                    256 * u16(a[8]) + a[9],
+                    256 * u16(a[10]) + a[11],
+                    256 * u16(a[12]) + a[13],
+                    256 * u16(a[14]) + a[15],
+                );
+            } else {
+                buf = try std.fmt.bufPrint(
+                    buf[0..],
+                    "{x}:{x}:{x}:{x}:{x}:{x}:{}.{}.{}.{}",
+                    256 * u16(a[0]) + a[1],
+                    256 * u16(a[2]) + a[3],
+                    256 * u16(a[4]) + a[5],
+                    256 * u16(a[6]) + a[7],
+                    256 * u16(a[8]) + a[9],
+                    256 * u16(a[10]) + a[11],
+                    a[12],
+                    a[13],
+                    a[14],
+                    a[15],
+                );
+            }
+
+            // Replace longest /(^0|:)[:0]{2,}/ with "::"
+            var i: usize = 0;
+            var j: usize = undefined;
+            var best = i;
+            var max: usize = 2;
+
+            while (i < buf.len) : (i += 1) {
+                if ((i != 0) and buf[i] != ':') continue;
+                j = strspn(buf[i..buf.len], ":0");
+                if (j > max) {
+                    best = i;
+                    max = j;
                 }
             }
+
+            if (max > 3) {
+                buf[best] = ':';
+                buf[best + 1] = ':';
+
+                var best_max = best + max;
+
+                // the slice here is ported from musl but it got some
+                // alterations, especially on the start index of this slice.
+                // there could be some improvements here
+                var copy_src = buf_main[best_max + 1 .. best_max + (i - best - max + 1)];
+                std.mem.copy(
+                    u8,
+                    buf[best + 2 ..],
+                    copy_src,
+                );
+
+                buf = buf[0 .. best + 2 + copy_src.len];
+            }
+
+            // TODO check IPNET6_ADDRSTRLEN and if buf.len is less than that,
+            // write it
+            try stream.write(buf);
+
+            allocator.free(buf_main);
             break :blk;
         },
 
@@ -280,5 +374,5 @@ pub fn prettyRData(allocator: *std.mem.Allocator, rdata: DNSRData) ![]const u8 {
         else => try stream.write("unsupported rdata"),
     }
 
-    return buf[0..];
+    return minibuf[0..];
 }
