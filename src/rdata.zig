@@ -29,10 +29,8 @@ pub const MXData = struct {
 /// DNS RDATA representation to a "native-r" type for nicer usage.
 pub const DNSRData = union(types.DNSType) {
     A: std.net.Address,
+    AAAA: std.net.Address,
 
-    // TODO: move this to std.net.Address once the stdlib has fixes
-    // for ipv6 storage & unparsing.
-    AAAA: [16]u8,
     NS: packet.DNSName,
     MD: packet.DNSName,
     MF: packet.DNSName,
@@ -85,7 +83,7 @@ pub fn parseRData(
     var rdata = switch (rdata_enum) {
         .A => blk: {
             var addr = try deserializer.deserialize(u32);
-            break :blk DNSRData{ .A = std.net.Address.initIp4(addr, 53) };
+            break :blk DNSRData{ .A = std.net.Address.initIp4(addr, 0) };
         },
         .AAAA => blk: {
             var ip6_addr: [16]u8 = undefined;
@@ -94,7 +92,12 @@ pub fn parseRData(
                 ip6_addr[i] = try deserializer.deserialize(u8);
             }
 
-            break :blk DNSRData{ .AAAA = ip6_addr };
+            break :blk DNSRData{
+                .AAAA = std.net.Address.initIp6(&std.net.Ip6Addr{
+                    .scope_id = 0,
+                    .addr = ip6_addr,
+                }, 0),
+            };
         },
 
         .NS => DNSRData{ .NS = try pkt.deserializeName(&deserializer) },
@@ -259,7 +262,7 @@ pub fn prettyRData(allocator: *std.mem.Allocator, rdata: DNSRData) ![]const u8 {
         // thank god for musl. this ipv6 repr code is ported from it.
         // Copyright (c) 2005-2014 Rich Felker, et al.
         DNSType.AAAA => blk: {
-            var a = rdata.AAAA;
+            var a = rdata.AAAA.os_addr.in6.addr;
             var buf_main: []u8 = try allocator.alloc(u8, 100);
             var buf = buf_main[0..];
 
