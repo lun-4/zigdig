@@ -160,9 +160,8 @@ pub fn toDNSName(allocator: *Allocator, domain: []const u8) !DNSName {
 }
 
 test "toDNSName" {
-    var da = std.heap.DirectAllocator.init();
-    var arena = std.heap.ArenaAllocator.init(&da.allocator);
-    errdefer arena.deinit();
+    var arena = std.heap.ArenaAllocator.init(std.heap.direct_allocator);
+    defer arena.deinit();
     const allocator = &arena.allocator;
 
     const domain = "www.google.com";
@@ -653,14 +652,13 @@ const TEST_PKT_RESPONSE = "RM2BgAABAAEAAAAABmdvb2dsZQNjb20AAAEAAcAMAAEAAQAAASwAB
 
 test "DNSPacket serialize/deserialize" {
     // setup a random id packet
-    var da = std.heap.DirectAllocator.init();
-    var arena = std.heap.ArenaAllocator.init(&da.allocator);
+    var arena = std.heap.ArenaAllocator.init(std.heap.direct_allocator);
     defer arena.deinit();
     const allocator = &arena.allocator;
 
     var packet = try DNSPacket.init(allocator, ""[0..]);
 
-    var r = rand.DefaultPrng.init(os.time.timestamp());
+    var r = rand.DefaultPrng.init(std.time.timestamp());
     const random_id = r.random.int(u16);
     packet.header.id = random_id;
 
@@ -682,8 +680,7 @@ fn decodeBase64(encoded: []const u8) ![]u8 {
 }
 
 test "deserialization of original google.com/A" {
-    var da = std.heap.DirectAllocator.init();
-    var arena = std.heap.ArenaAllocator.init(&da.allocator);
+    var arena = std.heap.ArenaAllocator.init(std.heap.direct_allocator);
     errdefer arena.deinit();
     const allocator = &arena.allocator;
 
@@ -700,8 +697,7 @@ test "deserialization of original google.com/A" {
 }
 
 test "deserialization of reply google.com/A" {
-    var da = std.heap.DirectAllocator.init();
-    var arena = std.heap.ArenaAllocator.init(&da.allocator);
+    var arena = std.heap.ArenaAllocator.init(std.heap.direct_allocator);
     errdefer arena.deinit();
     const allocator = &arena.allocator;
 
@@ -724,15 +720,14 @@ fn encodeBase64(out: []const u8) []const u8 {
     return encoded;
 }
 
-fn encodePacket(pkt: DNSPacket) ![]u8 {
+fn encodePacket(pkt: DNSPacket) ![]const u8 {
     var out = try serialTest(pkt.allocator, pkt);
     return encodeBase64(out);
 }
 
 test "serialization of google.com/A" {
     // setup a random id packet
-    var da = std.heap.DirectAllocator.init();
-    var arena = std.heap.ArenaAllocator.init(&da.allocator);
+    var arena = std.heap.ArenaAllocator.init(std.heap.direct_allocator);
     errdefer arena.deinit();
     const allocator = &arena.allocator;
 
@@ -746,7 +741,7 @@ test "serialization of google.com/A" {
     var question = DNSQuestion{
         .qname = qname,
         .qtype = 1,
-        .qclass = 1,
+        .qclass = DNSClass.IN,
     };
 
     try pkt.addQuestion(question);
