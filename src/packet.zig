@@ -279,7 +279,7 @@ pub const DNSPacket = struct {
     /// There is an automatic allocation of empty slices for later use.
     pub fn init(allocator: *Allocator, raw_bytes: []const u8) !DNSPacket {
         if (builtin.mode == builtin.Mode.Debug) {
-            debugWarn("packet base64 = '{}'\n", encodeBase64(raw_bytes));
+            debugWarn("packet = {x}\n", raw_bytes);
         }
 
         var self = DNSPacket{
@@ -414,6 +414,8 @@ pub const DNSPacket = struct {
         }
     }
 
+    /// Deserialize the given label into a LabelComponent, which can be either
+    /// A Pointer or a full Label.
     fn deserializeLabel(
         self: *DNSPacket,
         deserializer: var,
@@ -435,6 +437,7 @@ pub const DNSPacket = struct {
 
             // properly deserialize the slice
             var label_idx: usize = 0;
+            std.debug.warn("deserializing {}-byte label\n", ptr_prefix);
             while (label_idx < ptr_prefix) : (label_idx += 1) {
                 label[label_idx] = try inDeserial(deserializer, u8);
             }
@@ -681,7 +684,7 @@ fn decodeBase64(encoded: []const u8) ![]u8 {
 
 test "deserialization of original google.com/A" {
     var arena = std.heap.ArenaAllocator.init(std.heap.direct_allocator);
-    errdefer arena.deinit();
+    defer arena.deinit();
     const allocator = &arena.allocator;
 
     var decoded = try decodeBase64(TEST_PKT_QUERY[0..]);
@@ -698,7 +701,7 @@ test "deserialization of original google.com/A" {
 
 test "deserialization of reply google.com/A" {
     var arena = std.heap.ArenaAllocator.init(std.heap.direct_allocator);
-    errdefer arena.deinit();
+    defer arena.deinit();
     const allocator = &arena.allocator;
 
     var decoded = try decodeBase64(TEST_PKT_RESPONSE[0..]);
@@ -728,7 +731,7 @@ fn encodePacket(pkt: DNSPacket) ![]const u8 {
 test "serialization of google.com/A" {
     // setup a random id packet
     var arena = std.heap.ArenaAllocator.init(std.heap.direct_allocator);
-    errdefer arena.deinit();
+    defer arena.deinit();
     const allocator = &arena.allocator;
 
     var pkt = try DNSPacket.init(allocator, ""[0..]);
