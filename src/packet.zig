@@ -278,9 +278,7 @@ pub const DNSPacket = struct {
     /// Caller owns the memory.
     /// There is an automatic allocation of empty slices for later use.
     pub fn init(allocator: *Allocator, raw_bytes: []const u8) !DNSPacket {
-        if (builtin.mode == builtin.Mode.Debug) {
-            debugWarn("packet = {x}\n", raw_bytes);
-        }
+        debugWarn("packet = {x}\n", raw_bytes);
 
         var self = DNSPacket{
             .header = DNSHeader.init(),
@@ -437,7 +435,6 @@ pub const DNSPacket = struct {
 
             // properly deserialize the slice
             var label_idx: usize = 0;
-            std.debug.warn("deserializing {}-byte label\n", ptr_prefix);
             while (label_idx < ptr_prefix) : (label_idx += 1) {
                 label[label_idx] = try inDeserial(deserializer, u8);
             }
