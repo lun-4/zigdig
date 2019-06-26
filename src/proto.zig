@@ -66,6 +66,15 @@ pub fn recvDNSPacket(sockfd: i32, allocator: *Allocator) !DNSPacket {
 test "fake socket open/close" {
     var ip4addr = try std.net.parseIp4("127.0.0.1");
     var addr = std.net.Address.initIp4(ip4addr, 53);
-    var sockfd = try openDNSSocket(addr);
-    errdefer os.close(sockfd);
+    var sockfd = try openDNSSocket(&addr);
+    defer os.close(sockfd);
+}
+
+test "fake socket open/close (ip6)" {
+    var ip6addr = try std.net.parseIp6("0:0:0:0:0:0:0:1");
+    var addr = std.net.Address.initIp6(&ip6addr, 53);
+
+    // TODO fails on linux
+    //var sockfd = try openDNSSocket(&addr);
+    //defer os.close(sockfd);
 }

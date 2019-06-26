@@ -105,6 +105,7 @@ pub fn printPacket(pkt: DNSPacket) !void {
 /// if this was successful or not. A value of false should direct clients
 /// to follow the next nameserver in the list.
 fn resolve(allocator: *Allocator, addr: *std.net.Address, pkt: DNSPacket) !bool {
+    // TODO this fails on linux when addr is an ip6 addr...
     var sockfd = try proto.openDNSSocket(addr);
     errdefer std.os.close(sockfd);
 
@@ -194,12 +195,23 @@ pub fn main() anyerror!void {
     for (nameservers) |nameserver| {
         if (nameserver[0] == 0) continue;
 
-        // TODO: ipv6 address support
-        //var ip4addr = try std.net.parseIp4("127.0.0.1");
-        //var addr = std.net.Address.initIp4(ip4addr, 36953);
-        var ip4addr = try std.net.parseIp4(nameserver);
-        var addr = std.net.Address.initIp4(ip4addr, 53);
+        //var nameserver = "0:0:0:0:0:0:0:1";
 
+        // we don't know if the given nameserver address is ip4 or ip6, so we
+        // try parsing it as ip4, then ip6.
+        var addr: std.net.Address = undefined;
+
+        var ip4addr = std.net.parseIp4(nameserver) catch |err| {
+            // TODO parseIp6 isn't very robust right now. ::1 doesn't work, but
+            // 0:0:0:0:0:0:0:1 does.
+            var ip6addr = try std.net.parseIp6(nameserver);
+
+            addr = std.net.Address.initIp6(&ip6addr, 53);
+            if (try resolve(allocator, &addr, pkt)) break;
+            continue;
+        };
+
+        addr = std.net.Address.initIp4(ip4addr, 53);
         if (try resolve(allocator, &addr, pkt)) break;
     }
 }
