@@ -693,7 +693,16 @@ test "deserialization of original google.com/A" {
     std.debug.assert(pkt.header.nscount == 0);
     std.debug.assert(pkt.header.arcount == 0);
 
-    // TODO: assert values of question slice
+    const question = pkt.questions[0];
+
+    const labels = [_][]const u8{ "google"[0..], "com"[0..] };
+
+    for (question.qname.labels) |label, idx| {
+        std.testing.expectEqualSlices(u8, label, labels[idx]);
+    }
+
+    std.testing.expectEqual(question.qtype, u16(1));
+    std.testing.expectEqual(question.qclass, DNSClass.IN);
 }
 
 test "deserialization of reply google.com/A" {
