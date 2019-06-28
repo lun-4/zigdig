@@ -17,6 +17,7 @@ const OutError = io.SliceOutStream.Error;
 const InError = io.SliceInStream.Error;
 const DNSError = err.DNSError;
 const DNSClass = types.DNSClass;
+const DNSType = types.DNSType;
 
 pub const DNSPacketRCode = enum(u4) {
     NoError = 0,
@@ -175,6 +176,8 @@ test "toDNSName" {
 /// Represents a DNS question sent on the packet's question list.
 pub const DNSQuestion = struct {
     pub qname: DNSName,
+
+    // TODO this should be DNSType
     pub qtype: u16,
     pub qclass: DNSClass,
 };
@@ -193,6 +196,7 @@ pub const OpaqueDNSRData = struct {
 pub const DNSResource = struct {
     name: DNSName,
 
+    // TODO those should be DNSType and DNSClass respectively
     rr_type: u16,
     class: u16,
     ttl: i32,
@@ -671,6 +675,9 @@ test "DNSPacket serialize/deserialize" {
     var new_packet = try deserialTest(allocator, buf);
 
     testing.expectEqual(new_packet.header.id, packet.header.id);
+
+    // TODO the other header fields
+    testing.expectEqual(new_packet.header.qdcount, packet.header.qdcount);
 }
 
 fn decodeBase64(encoded: []const u8) ![]u8 {
@@ -723,8 +730,15 @@ test "deserialization of reply google.com/A" {
     var question = pkt.questions[0];
 
     expectGoogleLabels(question.qname.labels);
-    std.testing.expectEqual(question.qtype, u16(1));
-    std.testing.expectEqual(question.qclass, DNSClass.IN);
+    testing.expectEqual(@enumToInt(DNSType.A), question.qtype);
+    testing.expectEqual(DNSClass.IN, question.qclass);
+
+    var answer = pkt.answers[0];
+
+    expectGoogleLabels(answer.name.labels);
+    testing.expectEqual(@enumToInt(DNSType.A), answer.rr_type);
+    testing.expectEqual(@enumToInt(DNSClass.IN), answer.class);
+    testing.expectEqual(i32(300), answer.ttl);
 }
 
 fn encodeBase64(out: []const u8) []const u8 {
