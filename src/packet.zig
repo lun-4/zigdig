@@ -676,8 +676,14 @@ test "DNSPacket serialize/deserialize" {
 
     testing.expectEqual(new_packet.header.id, packet.header.id);
 
-    // TODO the other header fields
-    testing.expectEqual(new_packet.header.qdcount, packet.header.qdcount);
+    const fields = [_][]const u8{ "id", "opcode", "qdcount", "ancount" };
+
+    var new_header = new_packet.header;
+    var header = packet.header;
+
+    inline for (fields) |field| {
+        testing.expectEqual(@field(new_header, field), @field(header, field));
+    }
 }
 
 fn decodeBase64(encoded: []const u8) ![]u8 {
