@@ -649,6 +649,7 @@ fn deserialTest(allocator: *Allocator, buf: []u8) !DNSPacket {
 // extracted with 'dig google.com a +noedns'
 const TEST_PKT_QUERY = "FEUBIAABAAAAAAAABmdvb2dsZQNjb20AAAEAAQ==";
 const TEST_PKT_RESPONSE = "RM2BgAABAAEAAAAABmdvb2dsZQNjb20AAAEAAcAMAAEAAQAAASwABNg6yo4=";
+const GOOGLE_COM_LABELS = [_][]const u8{ "google"[0..], "com"[0..] };
 
 test "DNSPacket serialize/deserialize" {
     // setup a random id packet
@@ -679,6 +680,12 @@ fn decodeBase64(encoded: []const u8) ![]u8 {
     return decoded;
 }
 
+fn expectGoogleLabels(actual: [][]const u8) void {
+    for (actual) |label, idx| {
+        std.testing.expectEqualSlices(u8, label, GOOGLE_COM_LABELS[idx]);
+    }
+}
+
 test "deserialization of original google.com/A" {
     var arena = std.heap.ArenaAllocator.init(std.heap.direct_allocator);
     defer arena.deinit();
@@ -695,12 +702,7 @@ test "deserialization of original google.com/A" {
 
     const question = pkt.questions[0];
 
-    const labels = [_][]const u8{ "google"[0..], "com"[0..] };
-
-    for (question.qname.labels) |label, idx| {
-        std.testing.expectEqualSlices(u8, label, labels[idx]);
-    }
-
+    expectGoogleLabels(question.qname.labels);
     std.testing.expectEqual(question.qtype, u16(1));
     std.testing.expectEqual(question.qclass, DNSClass.IN);
 }
@@ -718,7 +720,11 @@ test "deserialization of reply google.com/A" {
     std.debug.assert(pkt.header.nscount == 0);
     std.debug.assert(pkt.header.arcount == 0);
 
-    // TODO: assert values of question slice
+    var question = pkt.questions[0];
+
+    expectGoogleLabels(question.qname.labels);
+    std.testing.expectEqual(question.qtype, u16(1));
+    std.testing.expectEqual(question.qclass, DNSClass.IN);
 }
 
 fn encodeBase64(out: []const u8) []const u8 {
