@@ -78,9 +78,7 @@ pub fn parseRData(
     var in_stream = &in.stream;
     var deserializer = io.Deserializer(.Big, .Bit, InError).init(in_stream);
 
-    var rdata_enum = @intToEnum(DNSType, resource.rr_type);
-
-    var rdata = switch (rdata_enum) {
+    var rdata = switch (resource.rr_type) {
         .A => blk: {
             var addr = try deserializer.deserialize(u32);
             break :blk DNSRData{ .A = std.net.Address.initIp4(addr, 0) };
@@ -137,7 +135,7 @@ pub fn parseRData(
         },
 
         else => blk: {
-            std.debug.warn("invalid rdata type: {}\n", rdata_enum);
+            std.debug.warn("invalid rdata type: {}\n", resource.rr_type);
             return DNSError.RDATANotSupported;
         },
     };

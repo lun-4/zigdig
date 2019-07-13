@@ -194,9 +194,8 @@ pub const OpaqueDNSRData = struct {
 pub const DNSResource = struct {
     name: DNSName,
 
-    // TODO those should be DNSType and DNSClass respectively
-    rr_type: u16,
-    class: u16,
+    rr_type: DNSType,
+    class: DNSClass,
     ttl: i32,
 
     // NOTE: this is DIFFERENT from DNSName due to rdlength being an u16,
@@ -536,8 +535,8 @@ pub const DNSPacket = struct {
 
             rs_list[i] = DNSResource{
                 .name = name,
-                .rr_type = rr_type,
-                .class = class,
+                .rr_type = @intToEnum(DNSType, rr_type),
+                .class = @intToEnum(DNSClass, class),
                 .ttl = ttl,
                 .rdata = rdata,
             };
@@ -740,8 +739,8 @@ test "deserialization of reply google.com/A" {
     var answer = pkt.answers[0];
 
     expectGoogleLabels(answer.name.labels);
-    testing.expectEqual(@enumToInt(DNSType.A), answer.rr_type);
-    testing.expectEqual(@enumToInt(DNSClass.IN), answer.class);
+    testing.expectEqual(DNSType.A, answer.rr_type);
+    testing.expectEqual(DNSClass.IN, answer.class);
     testing.expectEqual(i32(300), answer.ttl);
 }
 

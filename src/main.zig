@@ -36,8 +36,8 @@ fn printList(pkt: packet.DNSPacket, resource_list: []packet.DNSResource) !void {
         std.debug.warn(
             "{}.\t{}\t{}\t{}\t{}\n",
             try resource.name.toStr(pkt.allocator),
-            types.typeToStr(resource.rr_type),
-            types.classToStr(@intToEnum(types.DNSClass, resource.class)),
+            @tagName(resource.rr_type),
+            @tagName(resource.class),
             resource.ttl,
             try rdata.prettyRData(pkt.allocator, pkt_rdata),
         );
