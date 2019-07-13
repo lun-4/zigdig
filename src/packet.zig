@@ -176,9 +176,7 @@ test "toDNSName" {
 /// Represents a DNS question sent on the packet's question list.
 pub const DNSQuestion = struct {
     pub qname: DNSName,
-
-    // TODO this should be DNSType
-    pub qtype: u16,
+    pub qtype: DNSType,
     pub qclass: DNSClass,
 };
 
@@ -577,7 +575,7 @@ pub const DNSPacket = struct {
 
             var question = DNSQuestion{
                 .qname = name,
-                .qtype = qtype,
+                .qtype = @intToEnum(DNSType, qtype),
                 .qclass = @intToEnum(DNSClass, qclass),
             };
 
@@ -716,7 +714,7 @@ test "deserialization of original google.com/A" {
     const question = pkt.questions[0];
 
     expectGoogleLabels(question.qname.labels);
-    std.testing.expectEqual(question.qtype, u16(1));
+    std.testing.expectEqual(question.qtype, DNSType.A);
     std.testing.expectEqual(question.qclass, DNSClass.IN);
 }
 
@@ -736,7 +734,7 @@ test "deserialization of reply google.com/A" {
     var question = pkt.questions[0];
 
     expectGoogleLabels(question.qname.labels);
-    testing.expectEqual(@enumToInt(DNSType.A), question.qtype);
+    testing.expectEqual(DNSType.A, question.qtype);
     testing.expectEqual(DNSClass.IN, question.qclass);
 
     var answer = pkt.answers[0];
@@ -775,7 +773,7 @@ test "serialization of google.com/A" {
 
     var question = DNSQuestion{
         .qname = qname,
-        .qtype = 1,
+        .qtype = DNSType.A,
         .qclass = DNSClass.IN,
     };
 

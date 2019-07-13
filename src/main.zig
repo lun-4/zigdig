@@ -71,7 +71,7 @@ pub fn printPacket(pkt: DNSPacket) !void {
             std.debug.warn(
                 "{}.\t{}\t{}\n",
                 try question.qname.toStr(pkt.allocator),
-                types.typeToStr(question.qtype),
+                @tagName(question.qtype),
                 types.classToStr(question.qclass),
             );
         }
@@ -119,7 +119,6 @@ fn resolve(allocator: *Allocator, addr: *std.net.Address, pkt: DNSPacket) !bool 
     if (recvpkt.header.id != pkt.header.id) return MainDNSError.UnknownReplyId;
     if (!recvpkt.header.qr_flag) return MainDNSError.GotQuestion;
 
-    // TODO: nicer error handling, with a nice print n stuff
     switch (@intToEnum(DNSPacketRCode, recvpkt.header.rcode)) {
         DNSPacketRCode.NoError => {
             try printPacket(recvpkt);
@@ -134,7 +133,11 @@ fn resolve(allocator: *Allocator, addr: *std.net.Address, pkt: DNSPacket) !bool 
             std.debug.warn("{}\n", val);
             return MainDNSError.RCodeErr;
         },
-        else => unreachable,
+
+        else => {
+            std.debug.warn("unhandled rcode: {}\n", recvpkt.header.rcode);
+            return false;
+        },
     }
 }
 
@@ -158,7 +161,7 @@ fn makeDNSPacket(
 
     var question = packet.DNSQuestion{
         .qname = try packet.toDNSName(allocator, name),
-        .qtype = qtype_i,
+        .qtype = @intToEnum(types.DNSType, qtype_i),
         .qclass = DNSClass.IN,
     };
 
