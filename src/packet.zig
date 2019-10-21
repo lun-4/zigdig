@@ -19,6 +19,9 @@ const DNSError = err.DNSError;
 const DNSClass = types.DNSClass;
 const DNSType = types.DNSType;
 
+pub const QuestionList = std.ArrayList(DNSQuestion);
+pub const ResourceList = std.ArrayList(DNSResource);
+
 pub const DNSPacketRCode = enum(u4) {
     NoError = 0,
     FmtError,
@@ -278,7 +281,7 @@ pub const DNSPacket = struct {
     /// point to an offset *inside* the existing DNS packet's binary)
     /// Caller owns the memory.
     /// There is an automatic allocation of empty slices for later use.
-    pub fn init(allocator: *Allocator, raw_bytes: []const u8) !DNSPacket {
+    pub fn init(allocator: *Allocator, raw_bytes: []const u8) DNSPacket {
         debugWarn("packet = {x}\n", raw_bytes);
 
         var self = DNSPacket{
@@ -289,10 +292,10 @@ pub const DNSPacket = struct {
             .raw_bytes = raw_bytes,
             .allocator = allocator,
 
-            .questions = try allocator.alloc(DNSQuestion, 0),
-            .answers = try allocator.alloc(DNSResource, 0),
-            .authority = try allocator.alloc(DNSResource, 0),
-            .additional = try allocator.alloc(DNSResource, 0),
+            .questions = QuestionList.init(allocator),
+            .answers = ResourceList.init(allocator),
+            .authority = ResourceList.init(allocator),
+            .additinal = ResourceList.init(allocator),
         };
         return self;
     }
