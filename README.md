@@ -1,11 +1,18 @@
 # zigdig
 
 naive dns client library in zig
+
+## what does it do
  - serialization and deserialization of dns packets as per rfc1035
  - supports a subset of rdata (A and AAAA are there, so, for most cases, this
- will be enough. this library does not follow CNAMEs)
+ will be enough)
  - has helpers for reading `/etc/resolv.conf` (not that much, really)
+
+## what does it not do
  - no edns0
+ - can deserialize pointer labels (seamless for library user), but does not
+    serialize into pointers
+ - follow CNAME records
 
 ## how do
 
@@ -23,16 +30,15 @@ zig build install --prefix ~/.local/
 ```
 
 ```bash
-# rn only numerical QTYPE is allowed. (TODO nicer QTYPE parse/unparse)
-# QCLASS is default IN
-
-zigdig google.com 1
+zigdig google.com a
 ```
 
 ## using the library
 
+**TODO docs**
+
 it is recommended to look at zigdig's source on `src/main.zig` to understand
 how things tick using the library, but it boils down to three things:
  - packet generation and serialization
- - sending/receiving (via a small shim on top of std.os.posixSocket)
+ - sending/receiving (via a small shim on top of std.os.socket)
  - packet deserialization
