@@ -519,12 +519,11 @@ pub const DNSPacket = struct {
         self: *DNSPacket,
         deserializer: var,
         comptime header_field: []const u8,
-        comptime target_field: []const u8,
+        rs_list: *ResourceList,
     ) !void {
-        var i: usize = 0;
-        var total = @field(self.*.header, header_field);
-        var rs_list = @field(self.*, target_field);
+        const total = @field(self.*.header, header_field);
 
+        var i: usize = 0;
         while (i < total) : (i += 1) {
             var name = try self.deserializeName(deserializer);
             var rr_type = try deserializer.deserialize(u16);
@@ -558,13 +557,6 @@ pub const DNSPacket = struct {
         self.header = try deserializer.deserialize(DNSHeader);
         debugWarn("receiving header: {}\n", self.header.as_str());
 
-        // allocate the slices based on header data (WHEN DESERIALIZING).
-        // when serializing or using addQuestion we do a realloc.
-        //try self.questions.resize(self.header.qdcount);
-        //try self.answers.resize(self.header.ancount);
-        //try self.authority.resize(self.header.nscount);
-        //try self.additional.resize(self.header.arcount);
-
         // deserialize our questions, but since they contain DNSName,
         // the deserialization is messier than what it should be..
 
@@ -585,14 +577,12 @@ pub const DNSPacket = struct {
             i += 1;
         }
 
-        try self.deserialResourceList(deserializer, "ancount", "answers");
-        try self.deserialResourceList(deserializer, "nscount", "authority");
-        try self.deserialResourceList(deserializer, "arcount", "additional");
+        try self.deserialResourceList(deserializer, "ancount", &self.answers);
+        try self.deserialResourceList(deserializer, "nscount", &self.authority);
+        try self.deserialResourceList(deserializer, "arcount", &self.additional);
     }
 
     pub fn addQuestion(self: *DNSPacket, question: DNSQuestion) !void {
-        // bump it by 1 and realloc the questions slice to handle the new
-        // question
         self.header.qdcount += 1;
         try self.questions.append(question);
     }
@@ -732,7 +722,7 @@ test "deserialization of reply google.com/A" {
     testing.expectEqual(DNSType.A, question.qtype);
     testing.expectEqual(DNSClass.IN, question.qclass);
 
-    var answer = pkt.answers[0];
+    var answer = pkt.answers.at(0);
 
     expectGoogleLabels(answer.name.labels);
     testing.expectEqual(DNSType.A, answer.rr_type);
