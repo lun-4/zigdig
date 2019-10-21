@@ -50,7 +50,7 @@ pub fn recvDNSPacket(sockfd: i32, allocator: *Allocator) !DNSPacket {
     if (byte_count == 0) return DNSError.NetError;
 
     var packet_slice = buffer[0..byte_count];
-    var pkt = try DNSPacket.init(allocator, packet_slice);
+    var pkt = DNSPacket.init(allocator, packet_slice);
 
     //std.debug.warn("recv {} bytes for packet\n", byte_count);
     //base64Encode(packet_slice);

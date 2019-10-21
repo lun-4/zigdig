@@ -26,11 +26,11 @@ test "zigdig" {
 }
 
 /// Print a slice of DNSResource to stderr.
-fn printList(pkt: packet.DNSPacket, resource_list: []packet.DNSResource) !void {
+fn printList(pkt: packet.DNSPacket, resource_list: packet.ResourceList) !void {
     // TODO the formatting here is not good...
     std.debug.warn(";;name\t\t\trrtype\tclass\tttl\trdata\n");
 
-    for (resource_list) |resource| {
+    for (resource_list.toSlice()) |resource| {
         var pkt_rdata = try rdata.parseRData(pkt, resource, resource.rdata);
 
         std.debug.warn(
@@ -67,7 +67,7 @@ pub fn printPacket(pkt: DNSPacket) !void {
         std.debug.warn(";;-- question --\n");
         std.debug.warn(";;qname\tqtype\tqclass\n");
 
-        for (pkt.questions) |question| {
+        for (pkt.questions.toSlice()) |question| {
             std.debug.warn(
                 "{}.\t{}\t{}\n",
                 try question.qname.toStr(pkt.allocator),
@@ -151,7 +151,7 @@ fn makeDNSPacket(
     qtype: []u8,
 ) !DNSPacket {
     var qtype_i = try types.strToType(qtype);
-    var pkt = try DNSPacket.init(allocator, ""[0..]);
+    var pkt = DNSPacket.init(allocator, ""[0..]);
 
     // set random u16 as the id + all the other goodies in the header
     var r = std.rand.DefaultPrng.init(std.time.timestamp());
