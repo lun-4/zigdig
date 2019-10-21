@@ -293,7 +293,7 @@ pub const DNSPacket = struct {
             .questions = QuestionList.init(allocator),
             .answers = ResourceList.init(allocator),
             .authority = ResourceList.init(allocator),
-            .additinal = ResourceList.init(allocator),
+            .additional = ResourceList.init(allocator),
         };
         return self;
     }
