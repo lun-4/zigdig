@@ -108,7 +108,7 @@ pub const DNSHeader = packed struct {
 /// Due to DNS pointers, it becomes easier to process [][]const u8 instead of
 /// []u8 or []const u8 as you can merge things easily internally.
 pub const DNSName = struct {
-    pub labels: [][]const u8,
+    labels: [][]const u8,
 
     /// Returns the total size in bytes of the DNSName as if it was sent
     /// over a socket.
@@ -178,9 +178,9 @@ test "toDNSName" {
 
 /// Represents a DNS question sent on the packet's question list.
 pub const DNSQuestion = struct {
-    pub qname: DNSName,
-    pub qtype: DNSType,
-    pub qclass: DNSClass,
+    qname: DNSName,
+    qtype: DNSType,
+    qclass: DNSClass,
 };
 
 /// Represents any RDATA information. This is opaque (as a []u8) because RDATA

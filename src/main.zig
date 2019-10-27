@@ -193,9 +193,9 @@ pub fn main() anyerror!void {
     std.debug.warn("sending packet: {}\n", pkt.header.as_str());
 
     // read /etc/resolv.conf for nameserver
-    var nameservers = try resolv.readNameservers();
+    var nameservers = try resolv.readNameservers(allocator);
 
-    for (nameservers) |nameserver| {
+    for (nameservers.toSlice()) |nameserver| {
         if (nameserver[0] == 0) continue;
 
         //var nameserver = "0:0:0:0:0:0:0:1";
