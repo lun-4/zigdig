@@ -145,10 +145,10 @@ fn resolve(allocator: *Allocator, addr: *std.net.Address, pkt: DNSPacket) !bool 
 /// QNAME and QTYPE. Both are strings and so are converted to the respective
 /// DNSName and DNSType enum values internally.
 /// Sets a random packet ID.
-fn makeDNSPacket(
+pub fn makeDNSPacket(
     allocator: *std.mem.Allocator,
-    name: []u8,
-    qtype: []u8,
+    name: []const u8,
+    qtype: []const u8,
 ) !DNSPacket {
     var qtype_i = try types.strToType(qtype);
     var pkt = DNSPacket.init(allocator, ""[0..]);

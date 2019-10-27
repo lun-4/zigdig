@@ -8,6 +8,7 @@ const Allocator = std.mem.Allocator;
 
 const packet = @import("packet.zig");
 const resolv = @import("resolvconf.zig");
+const main = @import("main.zig");
 const DNSPacket = packet.DNSPacket;
 const DNSHeader = packet.DNSHeader;
 
@@ -127,6 +128,19 @@ pub fn getAddressList(allocator: *std.mem.Allocator, name: []const u8, port: u16
         std.debug.warn("{}, ", fd);
     }
     std.debug.warn("\n");
+
+    var packet_a = try main.makeDNSPacket(allocator, name, "A");
+    var packet_aaaa = try main.makeDNSPacket(allocator, name, "AAAA");
+
+    var buf_a = try allocator.alloc(u8, packet_a.size());
+    var buf_aaaa = try allocator.alloc(u8, packet_aaaa.size());
+
+    for (fds.toSlice()) |fd| {
+        try sendDNSPacket(fd, packet_a, buf_a);
+        try sendDNSPacket(fd, packet_aaaa, buf_aaaa);
+    }
+
+    // TODO poll for response
 
     return result;
 }
