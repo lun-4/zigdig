@@ -18,9 +18,14 @@ const InError = io.SliceInStream.Error;
 
 /// Returns the socket file descriptor for an UDP socket.
 pub fn openDNSSocket(addr: *net.Address) !i32 {
+    var flags: u32 = os.SOCK_DGRAM;
+    if (std.event.Loop.instance) |_| {
+        flags |= os.SOCK_NONBLOCK;
+    }
+
     var sockfd = try os.socket(
         os.AF_INET,
-        os.SOCK_DGRAM,
+        flags,
         os.PROTO_udp,
     );
 
@@ -95,6 +100,27 @@ pub const AddressList = struct {
     }
 };
 
+pub const pollfd = extern struct {
+    fd: os.fd_t,
+    events: i16,
+    revents: i16,
+};
+
+fn poll(fds: []pollfd, timeout: usize) usize {
+    const rc = os.system.syscall3(os.system.SYS_poll, @ptrToInt(fds.ptr), fds.len, timeout);
+    return rc;
+}
+
+fn toSlicePollFd(allocator: *std.mem.Allocator, fds: []os.fd_t) ![]pollfd {
+    var pollfds = try allocator.alloc(pollfd, fds.len);
+    std.mem.secureZero(pollfd, pollfds);
+    for (fds) |fd, idx| {
+        pollfds[idx] = pollfd{ .fd = fd, .events = 0x001, .revents = 0 };
+    }
+
+    return pollfds;
+}
+
 pub fn getAddressList(allocator: *std.mem.Allocator, name: []const u8, port: u16) !*AddressList {
     var result = try allocator.create(AddressList);
     result.* = AddressList{
@@ -104,6 +130,7 @@ pub fn getAddressList(allocator: *std.mem.Allocator, name: []const u8, port: u16
 
     var nameservers = try resolv.readNameservers(allocator);
     var fds = std.ArrayList(os.fd_t).init(allocator);
+
     for (nameservers.toSlice()) |nameserver| {
         var ns_addr = blk: {
             var addr: std.net.Address = undefined;
@@ -140,7 +167,13 @@ pub fn getAddressList(allocator: *std.mem.Allocator, name: []const u8, port: u16
         try sendDNSPacket(fd, packet_aaaa, buf_aaaa);
     }
 
-    // TODO poll for response
+    var pollfds = try toSlicePollFd(allocator, fds.toSlice());
+    const rc = poll(pollfds, 30);
+    std.debug.warn("rc = {}\n", rc);
+    const errno = os.system.getErrno(rc);
+    if (errno < 0) return error.PollFail;
+    if (rc == 0) return error.TimedOut;
 
+    std.debug.warn("got {} readable sockets\n", rc);
     return result;
 }
