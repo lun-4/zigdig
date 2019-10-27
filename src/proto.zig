@@ -70,7 +70,7 @@ pub fn recvDNSPacket(sockfd: os.fd_t, allocator: *Allocator) !DNSPacket {
     var in_stream = &in.stream;
     var deserializer = packet.DNSDeserializer.init(in_stream);
 
-    //try deserializer.deserializeInto(&pkt);
+    try deserializer.deserializeInto(&pkt);
     return pkt;
 }
 
