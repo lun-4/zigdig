@@ -21,6 +21,7 @@ const DNSType = types.DNSType;
 
 pub const QuestionList = std.ArrayList(DNSQuestion);
 pub const ResourceList = std.ArrayList(DNSResource);
+pub const DNSDeserializer = io.Deserializer(.Big, .Bit, InError);
 
 pub const DNSPacketRCode = enum(u4) {
     NoError = 0,
@@ -384,11 +385,7 @@ pub const DNSPacket = struct {
 
             var in = io.SliceInStream.init(start_slice);
             var in_stream = &in.stream;
-            var new_deserializer = io.Deserializer(
-                .Big,
-                .Bit,
-                InError,
-            ).init(in_stream);
+            var new_deserializer = DNSDeserializer.init(in_stream);
 
             //debugWarn(
             //    "pointer deserial from '{}' (len {})\n",
@@ -627,7 +624,7 @@ fn serialTest(allocator: *Allocator, packet: DNSPacket) ![]u8 {
 fn deserialTest(allocator: *Allocator, buf: []u8) !DNSPacket {
     var in = io.SliceInStream.init(buf);
     var stream = &in.stream;
-    var deserializer = io.Deserializer(.Big, .Bit, InError).init(stream);
+    var deserializer = DNSDeserializer.init(stream);
     var pkt = DNSPacket.init(allocator, buf);
     try deserializer.deserializeInto(&pkt);
     return pkt;

@@ -58,22 +58,19 @@ fn base64Encode(data: []u8) void {
     std.debug.warn("b64 encoded: '{}'\n", encoded);
 }
 
-pub fn recvDNSPacket(sockfd: i32, allocator: *Allocator) !DNSPacket {
-    var buffer = try allocator.alloc(u8, 512);
+pub fn recvDNSPacket(sockfd: os.fd_t, allocator: *Allocator) !DNSPacket {
+    var buffer = try allocator.alloc(u8, 1024);
     var byte_count = try os.read(sockfd, buffer);
     if (byte_count == 0) return DNSError.NetError;
 
     var packet_slice = buffer[0..byte_count];
     var pkt = DNSPacket.init(allocator, packet_slice);
 
-    //std.debug.warn("recv {} bytes for packet\n", byte_count);
-    //base64Encode(packet_slice);
-
     var in = io.SliceInStream.init(packet_slice);
     var in_stream = &in.stream;
-    var deserializer = io.Deserializer(.Big, .Bit, InError).init(in_stream);
+    var deserializer = packet.DNSDeserializer.init(in_stream);
 
-    try deserializer.deserializeInto(&pkt);
+    //try deserializer.deserializeInto(&pkt);
     return pkt;
 }
 
@@ -187,16 +184,16 @@ pub fn getAddressList(allocator: *std.mem.Allocator, name: []const u8, port: u16
 
         // TODO check pkt.header.rcode
         var ans = pkt.answers.at(0);
-        try main.printPacket(pkt);
-        //result.canon_name = try ans.name.toStr(allocator);
-        //var pkt_rdata = try rdata.parseRData(pkt, ans, ans.rdata);
-        //var addr = switch (pkt_rdata) {
-        //    .A => |addr| addr,
-        //    .AAAA => |addr| addr,
-        //    else => unreachable,
-        //};
-        //try result.addrs.append(addr);
-        //return result;
+        //try main.printPacket(pkt);
+        result.canon_name = try ans.name.toStr(allocator);
+        var pkt_rdata = try rdata.parseRData(pkt, ans, ans.rdata);
+        var addr = switch (pkt_rdata) {
+            .A => |addr| addr,
+            .AAAA => |addr| addr,
+            else => unreachable,
+        };
+        try result.addrs.append(addr);
+        return result;
     }
 
     return result;

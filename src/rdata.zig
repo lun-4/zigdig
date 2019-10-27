@@ -76,7 +76,7 @@ pub fn parseRData(
     var opaque_val = opaque.value;
     var in = io.SliceInStream.init(opaque_val);
     var in_stream = &in.stream;
-    var deserializer = io.Deserializer(.Big, .Bit, InError).init(in_stream);
+    var deserializer = packet.DNSDeserializer.init(in_stream);
 
     var rdata = switch (resource.rr_type) {
         .A => blk: {
