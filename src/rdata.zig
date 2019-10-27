@@ -91,7 +91,7 @@ pub fn parseRData(
             }
 
             break :blk DNSRData{
-                .AAAA = std.net.Address.initIp6(&std.net.Ip6Addr{
+                .AAAA = std.net.Address.initIp6(std.net.Ip6Addr{
                     .scope_id = 0,
                     .addr = ip6_addr,
                 }, 0),

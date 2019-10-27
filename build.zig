@@ -10,7 +10,7 @@ pub fn build(b: *Builder) void {
     const exe = b.addExecutable("zigdig", "src/main.zig");
     exe.setBuildMode(mode);
 
-    const exe2 = b.addExecutable("zigdig-sync", "src/async_main.zig");
+    const exe2 = b.addExecutable("zigdig-async", "src/async_main.zig");
     exe.setBuildMode(mode);
 
     const lib = b.addStaticLibrary("zigdig", "src/main.zig");

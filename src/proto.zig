@@ -74,7 +74,26 @@ test "fake socket open/close (ip6)" {
     var ip6addr = try std.net.parseIp6("0:0:0:0:0:0:0:1");
     var addr = std.net.Address.initIp6(&ip6addr, 53);
 
-    // TODO fails on linux
     //var sockfd = try openDNSSocket(&addr);
     //defer os.close(sockfd);
+}
+
+pub const AddressArrayList = std.ArrayList(std.net.Address);
+
+pub const AddressList = struct {
+    addrs: AddressArrayList,
+    canon_name: ?[]u8,
+
+    pub fn deinit(self: *@This()) void {
+        self.addrs.deinit();
+    }
+};
+
+pub fn getAddressList(allocator: *std.mem.Allocator, name: []const u8, port: u16) !*AddressList {
+    var result = try allocator.create(AddressList);
+    result.* = AddressList{
+        .addrs = AddressArrayList.init(allocator),
+        .canon_name = null,
+    };
+    return result;
 }

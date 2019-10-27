@@ -208,8 +208,7 @@ pub fn main() anyerror!void {
             // TODO parseIp6 isn't very robust right now. ::1 doesn't work, but
             // 0:0:0:0:0:0:0:1 does.
             var ip6addr = try std.net.parseIp6(nameserver);
-
-            addr = std.net.Address.initIp6(&ip6addr, 53);
+            addr = std.net.Address.initIp6(ip6addr, 53);
             if (try resolve(allocator, &addr, pkt)) break;
             continue;
         };

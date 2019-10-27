@@ -34,7 +34,7 @@ pub fn allMain() anyerror!void {
     if (info.canon_name) |canon| {
         std.debug.warn("canon name: {}\n", canon);
     }
-    for (info.addrs) |addr| {
+    for (info.addrs.toSlice()) |addr| {
         std.debug.warn("found addr: {}\n", addr);
     }
 }
