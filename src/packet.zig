@@ -393,18 +393,19 @@ pub const DNSPacket = struct {
             //    start_slice.len,
             //);
 
-            // the old (nonfunctional approach) used infferred error sets
-            // and a simpleDeserializeName to counteract the problems
-            // with just slapping deserializeName in and doing recursion.
+            // the old (nonfunctional approach) a simpleDeserializeName
+            // to counteract the problems with just slapping deserializeName
+            // in and doing recursion. however that's problematic as pointers
+            // could be pointing to other pointers.
 
-            // The problem with inferred error sets is that as soon as you
-            // do recursion, the error set of the function isn't fully analyze
-            // by the time the compiler runs over the recusrive call.
+            // because of issue 1006 and the disallowance of recursive async
+            // fns, we heap-allocate this call
 
-            // recasting deserializer errors into a DNSError and enforcing
-            // an error set on the chain of deserializeName functions fixes
-            // the issue.
-            var name = try self.deserializeName(&new_deserializer);
+            var frame = try self.allocator.create(@Frame(DNSPacket.deserializeName));
+            defer self.allocator.destroy(frame);
+            frame.* = async self.deserializeName(&new_deserializer);
+            var name = try await frame;
+
             return name.labels;
         } else {
             return DNSError.ParseFail;
@@ -447,7 +448,7 @@ pub const DNSPacket = struct {
     /// Deserializes a DNSName, which represents a slice of slice of u8 ([][]u8)
     pub fn deserializeName(
         self: *DNSPacket,
-        deserial: var,
+        deserial: *DNSDeserializer,
     ) (DNSError || Allocator.Error)!DNSName {
         // allocate empty label slice
         var deserializer = deserial;
