@@ -7,6 +7,7 @@ const io = std.io;
 const Allocator = std.mem.Allocator;
 
 const packet = @import("packet.zig");
+const resolv = @import("resolvconf.zig");
 const DNSPacket = packet.DNSPacket;
 const DNSHeader = packet.DNSHeader;
 
@@ -22,7 +23,11 @@ pub fn openDNSSocket(addr: *net.Address) !i32 {
         os.PROTO_udp,
     );
 
-    try os.connect(sockfd, &addr.os_addr, @sizeOf(os.sockaddr));
+    if (std.event.Loop.instance) |_| {
+        try os.connect_async(sockfd, &addr.os_addr, @sizeOf(os.sockaddr));
+    } else {
+        try os.connect(sockfd, &addr.os_addr, @sizeOf(os.sockaddr));
+    }
     return sockfd;
 }
 
@@ -95,5 +100,33 @@ pub fn getAddressList(allocator: *std.mem.Allocator, name: []const u8, port: u16
         .addrs = AddressArrayList.init(allocator),
         .canon_name = null,
     };
+
+    var nameservers = try resolv.readNameservers(allocator);
+    var fds = std.ArrayList(os.fd_t).init(allocator);
+    for (nameservers.toSlice()) |nameserver| {
+        var ns_addr = blk: {
+            var addr: std.net.Address = undefined;
+            var is_ipv4 = false;
+
+            var ip4addr = std.net.parseIp4(nameserver) catch |err| {
+                var ip6addr = try std.net.parseIp6(nameserver);
+                addr = std.net.Address.initIp6(ip6addr, 53);
+                break :blk addr;
+            };
+
+            addr = std.net.Address.initIp4(ip4addr, 53);
+            break :blk addr;
+        };
+
+        var fd = try openDNSSocket(&ns_addr);
+        try fds.append(fd);
+    }
+
+    std.debug.warn("nameserver fds:");
+    for (fds.toSlice()) |fd| {
+        std.debug.warn("{}, ", fd);
+    }
+    std.debug.warn("\n");
+
     return result;
 }
