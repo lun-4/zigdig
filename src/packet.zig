@@ -127,7 +127,7 @@ pub const DNSName = struct {
 
     /// Convert a DNSName to a human-friendly domain name.
     /// Does not add a period to the end of it.
-    pub fn toStr(self: *const DNSName, allocator: *Allocator) ![]const u8 {
+    pub fn toStr(self: *const DNSName, allocator: *Allocator) ![]u8 {
         return try std.mem.join(allocator, ".", self.labels);
     }
 };

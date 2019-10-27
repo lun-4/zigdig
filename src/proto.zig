@@ -9,7 +9,10 @@ const Allocator = std.mem.Allocator;
 const packet = @import("packet.zig");
 const resolv = @import("resolvconf.zig");
 const main = @import("main.zig");
+const rdata = @import("rdata.zig");
+
 const DNSPacket = packet.DNSPacket;
+const DNSPacketRCode = packet.DNSPacketRCode;
 const DNSHeader = packet.DNSHeader;
 
 const DNSError = error{NetError};
@@ -83,7 +86,7 @@ test "fake socket open/close" {
 
 test "fake socket open/close (ip6)" {
     var ip6addr = try std.net.parseIp6("0:0:0:0:0:0:0:1");
-    var addr = std.net.Address.initIp6(&ip6addr, 53);
+    var addr = std.net.Address.initIp6(ip6addr, 53);
 
     //var sockfd = try openDNSSocket(&addr);
     //defer os.close(sockfd);
@@ -111,11 +114,13 @@ fn poll(fds: []pollfd, timeout: usize) usize {
     return rc;
 }
 
+const POLLIN = 0x001;
+
 fn toSlicePollFd(allocator: *std.mem.Allocator, fds: []os.fd_t) ![]pollfd {
     var pollfds = try allocator.alloc(pollfd, fds.len);
     std.mem.secureZero(pollfd, pollfds);
     for (fds) |fd, idx| {
-        pollfds[idx] = pollfd{ .fd = fd, .events = 0x001, .revents = 0 };
+        pollfds[idx] = pollfd{ .fd = fd, .events = POLLIN, .revents = 0 };
     }
 
     return pollfds;
@@ -150,12 +155,6 @@ pub fn getAddressList(allocator: *std.mem.Allocator, name: []const u8, port: u16
         try fds.append(fd);
     }
 
-    std.debug.warn("nameserver fds:");
-    for (fds.toSlice()) |fd| {
-        std.debug.warn("{}, ", fd);
-    }
-    std.debug.warn("\n");
-
     var packet_a = try main.makeDNSPacket(allocator, name, "A");
     var packet_aaaa = try main.makeDNSPacket(allocator, name, "AAAA");
 
@@ -168,12 +167,37 @@ pub fn getAddressList(allocator: *std.mem.Allocator, name: []const u8, port: u16
     }
 
     var pollfds = try toSlicePollFd(allocator, fds.toSlice());
-    const rc = poll(pollfds, 30);
+    const rc = poll(pollfds, 300);
     std.debug.warn("rc = {}\n", rc);
     const errno = os.system.getErrno(rc);
     if (errno < 0) return error.PollFail;
     if (rc == 0) return error.TimedOut;
 
-    std.debug.warn("got {} readable sockets\n", rc);
+    // TODO wrap this in a while true so we can retry servers who fail
+
+    for (pollfds) |incoming| {
+        if (incoming.revents == 0) continue;
+        if (incoming.revents != POLLIN) return error.UnexpectedPollFd;
+        std.debug.warn("fd {} is available\n", incoming.fd);
+        var pkt = try recvDNSPacket(incoming.fd, allocator);
+        if (!pkt.header.qr_flag) return error.GotQuestion;
+
+        // TODO remove fd from poll() and try again
+        if (pkt.header.ancount == 0) return error.NoAnswers;
+
+        // TODO check pkt.header.rcode
+        var ans = pkt.answers.at(0);
+        try main.printPacket(pkt);
+        //result.canon_name = try ans.name.toStr(allocator);
+        //var pkt_rdata = try rdata.parseRData(pkt, ans, ans.rdata);
+        //var addr = switch (pkt_rdata) {
+        //    .A => |addr| addr,
+        //    .AAAA => |addr| addr,
+        //    else => unreachable,
+        //};
+        //try result.addrs.append(addr);
+        //return result;
+    }
+
     return result;
 }
