@@ -34,7 +34,8 @@ pub const DNSPacketRCode = enum(u4) {
 
 fn debugWarn(comptime format: []const u8, args: ...) void {
     if (builtin.mode == builtin.Mode.Debug) {
-        std.debug.warn("[zigdig debug] " ++ format, args);
+        // TODO better way to do this
+        //std.debug.warn("[zigdig debug] " ++ format, args);
     }
 }
 

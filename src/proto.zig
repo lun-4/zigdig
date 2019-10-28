@@ -184,7 +184,7 @@ pub fn getAddressList(allocator: *std.mem.Allocator, name: []const u8, port: u16
 
         // TODO check pkt.header.rcode
         var ans = pkt.answers.at(0);
-        try main.printPacket(pkt);
+        // try main.printPacket(pkt);
         result.canon_name = try ans.name.toStr(allocator);
         var pkt_rdata = try rdata.parseRData(pkt, ans, ans.rdata);
         var addr = switch (pkt_rdata) {

@@ -28,7 +28,10 @@ async fn asyncMain(loop: *std.event.Loop) !void {
 }
 
 pub fn allMain() anyerror!void {
-    const info = try proto.getAddressList(std.heap.direct_allocator, "ziglang.org", 80);
+    var arena = std.heap.ArenaAllocator.init(std.heap.direct_allocator);
+    defer arena.deinit();
+
+    const info = try proto.getAddressList(&arena.allocator, "ziglang.org", 443);
     defer info.deinit();
 
     if (info.canon_name) |canon| {
