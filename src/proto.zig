@@ -179,12 +179,12 @@ pub fn getAddressList(allocator: *std.mem.Allocator, name: []const u8, port: u16
         var pkt = try recvDNSPacket(incoming.fd, allocator);
         if (!pkt.header.qr_flag) return error.GotQuestion;
 
-        // TODO remove fd from poll() and try again
+        // TODO remove fd from poll() and try again when no answer
         if (pkt.header.ancount == 0) return error.NoAnswers;
 
         // TODO check pkt.header.rcode
         var ans = pkt.answers.at(0);
-        //try main.printPacket(pkt);
+        try main.printPacket(pkt);
         result.canon_name = try ans.name.toStr(allocator);
         var pkt_rdata = try rdata.parseRData(pkt, ans, ans.rdata);
         var addr = switch (pkt_rdata) {

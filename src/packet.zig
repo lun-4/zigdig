@@ -450,6 +450,10 @@ pub const DNSPacket = struct {
         self: *DNSPacket,
         deserial: *DNSDeserializer,
     ) (DNSError || Allocator.Error)!DNSName {
+        if (std.io.mode == .evented) {
+            _ = @frame();
+        }
+
         // allocate empty label slice
         var deserializer = deserial;
         var labels: [][]const u8 = try self.allocator.alloc([]u8, 0);
