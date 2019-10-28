@@ -188,10 +188,16 @@ pub fn getAddressList(allocator: *std.mem.Allocator, name: []const u8, port: u16
         result.canon_name = try ans.name.toStr(allocator);
         var pkt_rdata = try rdata.parseRData(pkt, ans, ans.rdata);
         var addr = switch (pkt_rdata) {
-            .A => |addr| addr,
-            .AAAA => |addr| addr,
+            .A => |addr| blk: {
+                break :blk std.net.Address.initIp4(addr.os_addr.in.addr, port);
+            },
+            .AAAA => |addr| blk: {
+                var ip6 = std.net.Ip6Addr{ .scope_id = 0, .addr = addr.os_addr.in6.addr };
+                break :blk std.net.Address.initIp6(ip6, port);
+            },
             else => unreachable,
         };
+
         try result.addrs.append(addr);
         return result;
     }
