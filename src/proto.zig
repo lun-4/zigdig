@@ -49,6 +49,7 @@ pub fn sendDNSPacket(sockfd: i32, pkt: DNSPacket, buffer: []u8) !void {
     try serializer.flush();
 
     try os.write(sockfd, buffer);
+    //try os.sendmsg(sockfd, buffer);
 }
 
 fn base64Encode(data: []u8) void {
@@ -100,24 +101,10 @@ pub const AddressList = struct {
     }
 };
 
-pub const pollfd = extern struct {
-    fd: os.fd_t,
-    events: i16,
-    revents: i16,
-};
-
-fn poll(fds: []pollfd, timeout: usize) usize {
-    const rc = os.system.syscall3(os.system.SYS_poll, @ptrToInt(fds.ptr), fds.len, timeout);
-    return rc;
-}
-
-const POLLIN = 0x001;
-
-fn toSlicePollFd(allocator: *std.mem.Allocator, fds: []os.fd_t) ![]pollfd {
-    var pollfds = try allocator.alloc(pollfd, fds.len);
-    std.mem.secureZero(pollfd, pollfds);
+fn toSlicePollFd(allocator: *std.mem.Allocator, fds: []os.fd_t) ![]os.pollfd {
+    var pollfds = try allocator.alloc(os.pollfd, fds.len);
     for (fds) |fd, idx| {
-        pollfds[idx] = pollfd{ .fd = fd, .events = POLLIN, .revents = 0 };
+        pollfds[idx] = os.pollfd{ .fd = fd, .events = os.POLLIN, .revents = 0 };
     }
 
     return pollfds;
@@ -164,17 +151,15 @@ pub fn getAddressList(allocator: *std.mem.Allocator, name: []const u8, port: u16
     }
 
     var pollfds = try toSlicePollFd(allocator, fds.toSlice());
-    const rc = poll(pollfds, 300);
-    std.debug.warn("rc = {}\n", rc);
-    const errno = os.system.getErrno(rc);
-    if (errno < 0) return error.PollFail;
-    if (rc == 0) return error.TimedOut;
+    const sockets = try os.poll(pollfds, 300);
+    if (sockets == 0) return error.TimedOut;
 
     // TODO wrap this in a while true so we can retry servers who fail
 
     for (pollfds) |incoming| {
         if (incoming.revents == 0) continue;
-        if (incoming.revents != POLLIN) return error.UnexpectedPollFd;
+        if (incoming.revents != os.POLLIN) return error.UnexpectedPollFd;
+
         std.debug.warn("fd {} is available\n", incoming.fd);
         var pkt = try recvDNSPacket(incoming.fd, allocator);
         if (!pkt.header.qr_flag) return error.GotQuestion;
