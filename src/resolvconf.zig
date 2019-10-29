@@ -15,13 +15,12 @@ pub fn readNameservers(allocator: *std.mem.Allocator) !NameserverList {
     errdefer nameservers.deinit();
 
     // TODO maybe a better approach would be adding an iterator
-    // to file to go through lines that reads bytes until '\n'.
-
-    const total_bytes = try file.getEndPos();
-    var buf = try allocator.alloc(u8, total_bytes);
+    // to file to go through lines that reads (and allocates) bytes until '\n'.
+    var buf = try allocator.alloc(u8, std.mem.page_size);
     errdefer allocator.free(buf);
-
-    _ = try file.read(buf);
+    while ((try file.read(buf)) != 0) {
+        buf = try allocator.realloc(buf, buf.len + std.mem.page_size);
+    }
 
     var it = mem.tokenize(buf, "\n");
     while (it.next()) |line| {
