@@ -48,8 +48,7 @@ pub fn sendDNSPacket(sockfd: i32, pkt: DNSPacket, buffer: []u8) !void {
     try serializer.serialize(pkt);
     try serializer.flush();
 
-    try os.write(sockfd, buffer);
-    //try os.sendmsg(sockfd, buffer);
+    _ = try std.os.sendto(sockfd, buffer, 0, null, 0);
 }
 
 fn base64Encode(data: []u8) void {
