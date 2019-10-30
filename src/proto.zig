@@ -20,27 +20,20 @@ const OutError = io.SliceOutStream.Error;
 const InError = io.SliceInStream.Error;
 
 /// Returns the socket file descriptor for an UDP socket.
-pub fn openDNSSocket(addr: *net.Address) !i32 {
+pub fn openDNSSocket() !i32 {
     var flags: u32 = os.SOCK_DGRAM;
     if (std.event.Loop.instance) |_| {
         flags |= os.SOCK_NONBLOCK;
     }
 
-    var sockfd = try os.socket(
+    return try os.socket(
         os.AF_INET,
         flags,
         os.PROTO_udp,
     );
-
-    if (std.event.Loop.instance) |_| {
-        try os.connect_async(sockfd, &addr.os_addr, @sizeOf(os.sockaddr));
-    } else {
-        try os.connect(sockfd, &addr.os_addr, @sizeOf(os.sockaddr));
-    }
-    return sockfd;
 }
 
-pub fn sendDNSPacket(sockfd: i32, pkt: DNSPacket, buffer: []u8) !void {
+pub fn sendDNSPacket(sockfd: i32, addr: *const std.net.Address, pkt: DNSPacket, buffer: []u8) !void {
     var out = io.SliceOutStream.init(buffer);
     var out_stream = &out.stream;
     var serializer = io.Serializer(.Big, .Bit, OutError).init(out_stream);
@@ -48,7 +41,7 @@ pub fn sendDNSPacket(sockfd: i32, pkt: DNSPacket, buffer: []u8) !void {
     try serializer.serialize(pkt);
     try serializer.flush();
 
-    _ = try std.os.sendto(sockfd, buffer, 0, null, 0);
+    _ = try std.os.sendto(sockfd, buffer, 0, &addr.os_addr, @sizeOf(std.os.sockaddr));
 }
 
 fn base64Encode(data: []u8) void {
@@ -72,21 +65,6 @@ pub fn recvDNSPacket(sockfd: os.fd_t, allocator: *Allocator) !DNSPacket {
 
     try deserializer.deserializeInto(&pkt);
     return pkt;
-}
-
-test "fake socket open/close" {
-    var ip4addr = try std.net.parseIp4("127.0.0.1");
-    var addr = std.net.Address.initIp4(ip4addr, 53);
-    var sockfd = try openDNSSocket(&addr);
-    defer os.close(sockfd);
-}
-
-test "fake socket open/close (ip6)" {
-    var ip6addr = try std.net.parseIp6("0:0:0:0:0:0:0:1");
-    var addr = std.net.Address.initIp6(ip6addr, 53);
-
-    //var sockfd = try openDNSSocket(&addr);
-    //defer os.close(sockfd);
 }
 
 pub const AddressArrayList = std.ArrayList(std.net.Address);
@@ -116,8 +94,11 @@ pub fn getAddressList(allocator: *std.mem.Allocator, name: []const u8, port: u16
         .canon_name = null,
     };
 
+    var fd = try openDNSSocket();
+
     var nameservers = try resolv.readNameservers(allocator);
-    var fds = std.ArrayList(os.fd_t).init(allocator);
+    var addrs = std.ArrayList(std.net.Address).init(allocator);
+    defer addrs.deinit();
 
     for (nameservers.toSlice()) |nameserver| {
         var ns_addr = blk: {
@@ -134,8 +115,7 @@ pub fn getAddressList(allocator: *std.mem.Allocator, name: []const u8, port: u16
             break :blk addr;
         };
 
-        var fd = try openDNSSocket(&ns_addr);
-        try fds.append(fd);
+        try addrs.append(ns_addr);
     }
 
     var packet_a = try main.makeDNSPacket(allocator, name, "A");
@@ -144,12 +124,13 @@ pub fn getAddressList(allocator: *std.mem.Allocator, name: []const u8, port: u16
     var buf_a = try allocator.alloc(u8, packet_a.size());
     var buf_aaaa = try allocator.alloc(u8, packet_aaaa.size());
 
-    for (fds.toSlice()) |fd| {
-        try sendDNSPacket(fd, packet_a, buf_a);
-        try sendDNSPacket(fd, packet_aaaa, buf_aaaa);
+    for (addrs.toSlice()) |addr| {
+        try sendDNSPacket(fd, &addr, packet_a, buf_a);
+        try sendDNSPacket(fd, &addr, packet_aaaa, buf_aaaa);
     }
 
-    var pollfds = try toSlicePollFd(allocator, fds.toSlice());
+    var fds = [_]os.fd_t{fd};
+    var pollfds = try toSlicePollFd(allocator, fds[0..]);
     const sockets = try os.poll(pollfds, 300);
     if (sockets == 0) return error.TimedOut;
 

@@ -106,11 +106,11 @@ pub fn printPacket(pkt: DNSPacket) !void {
 /// to follow the next nameserver in the list.
 fn resolve(allocator: *Allocator, addr: *std.net.Address, pkt: DNSPacket) !bool {
     // TODO this fails on linux when addr is an ip6 addr...
-    var sockfd = try proto.openDNSSocket(addr);
+    var sockfd = try proto.openDNSSocket();
     errdefer std.os.close(sockfd);
 
     var buf = try allocator.alloc(u8, pkt.size());
-    try proto.sendDNSPacket(sockfd, pkt, buf);
+    try proto.sendDNSPacket(sockfd, addr, pkt, buf);
 
     var recvpkt = try proto.recvDNSPacket(sockfd, allocator);
     std.debug.warn("recv packet: {}\n", recvpkt.header.as_str());
