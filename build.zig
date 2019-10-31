@@ -10,8 +10,8 @@ pub fn build(b: *Builder) void {
     const exe = b.addExecutable("zigdig", "src/main.zig");
     exe.setBuildMode(mode);
 
-    const exe2 = b.addExecutable("zigdig-async", "src/async_main.zig");
-    exe.setBuildMode(mode);
+    //const exe2 = b.addExecutable("zigdig-async", "src/async_main.zig");
+    //exe.setBuildMode(mode);
 
     const lib = b.addStaticLibrary("zigdig", "src/main.zig");
     lib.setBuildMode(mode);
@@ -28,9 +28,9 @@ pub fn build(b: *Builder) void {
 
     b.default_step.dependOn(&lib.step);
     b.default_step.dependOn(&exe.step);
-    b.default_step.dependOn(&exe2.step);
+    //b.default_step.dependOn(&exe2.step);
 
     b.installArtifact(lib);
     b.installArtifact(exe);
-    b.installArtifact(exe2);
+    //b.installArtifact(exe2);
 }

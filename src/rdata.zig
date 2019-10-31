@@ -28,8 +28,8 @@ pub const MXData = struct {
 
 /// DNS RDATA representation to a "native-r" type for nicer usage.
 pub const DNSRData = union(types.DNSType) {
-    A: std.net.Address,
-    AAAA: std.net.Address,
+    A: std.net.IpAddress,
+    AAAA: std.net.IpAddress,
 
     NS: packet.DNSName,
     MD: packet.DNSName,
@@ -80,8 +80,14 @@ pub fn parseRData(
 
     var rdata = switch (resource.rr_type) {
         .A => blk: {
-            var addr = try deserializer.deserialize(u32);
-            break :blk DNSRData{ .A = std.net.Address.initIp4(addr, 0) };
+            var ip4addr: [4]u8 = undefined;
+            for (ip4addr) |_, i| {
+                ip4addr[i] = try deserializer.deserialize(u8);
+            }
+
+            break :blk DNSRData{
+                .A = std.net.IpAddress.initIp4(ip4addr, 0),
+            };
         },
         .AAAA => blk: {
             var ip6_addr: [16]u8 = undefined;
@@ -91,10 +97,7 @@ pub fn parseRData(
             }
 
             break :blk DNSRData{
-                .AAAA = std.net.Address.initIp6(std.net.Ip6Addr{
-                    .scope_id = 0,
-                    .addr = ip6_addr,
-                }, 0),
+                .AAAA = std.net.IpAddress.initIp6(ip6_addr, 0, 0, 0),
             };
         },
 
@@ -247,100 +250,8 @@ pub fn prettyRData(allocator: *std.mem.Allocator, rdata: DNSRData) ![]const u8 {
     var stream = &out.stream;
 
     switch (rdata) {
-        DNSType.A => blk: {
-            var d = rdata.A.os_addr.in.addr;
-            var v1 = d & 0xff;
-            var v2 = (d >> 8) & 0xff;
-            var v3 = (d >> 16) & 0xff;
-            var v4 = (d >> 24);
-            try stream.print("{}.{}.{}.{}", v4, v3, v2, v1);
-            break :blk;
-        },
-
-        // thank god for musl. this ipv6 repr code is ported from it.
-        // Copyright (c) 2005-2014 Rich Felker, et al.
-        DNSType.AAAA => blk: {
-            var a = rdata.AAAA.os_addr.in6.addr;
-            var buf_main: []u8 = try allocator.alloc(u8, 100);
-            var buf = buf_main[0..];
-
-            // ipv4 sentry value
-            const sentry = [_]u8{ 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 255, 255 };
-
-            if (std.mem.compare(
-                u8,
-                a[0..12],
-                sentry,
-            ) != std.mem.Compare.Equal) {
-                buf = try std.fmt.bufPrint(
-                    buf[0..],
-                    "{x}:{x}:{x}:{x}:{x}:{x}:{x}:{x}",
-                    256 * u16(a[0]) + a[1],
-                    256 * u16(a[2]) + a[3],
-                    256 * u16(a[4]) + a[5],
-                    256 * u16(a[6]) + a[7],
-                    256 * u16(a[8]) + a[9],
-                    256 * u16(a[10]) + a[11],
-                    256 * u16(a[12]) + a[13],
-                    256 * u16(a[14]) + a[15],
-                );
-            } else {
-                buf = try std.fmt.bufPrint(
-                    buf[0..],
-                    "{x}:{x}:{x}:{x}:{x}:{x}:{}.{}.{}.{}",
-                    256 * u16(a[0]) + a[1],
-                    256 * u16(a[2]) + a[3],
-                    256 * u16(a[4]) + a[5],
-                    256 * u16(a[6]) + a[7],
-                    256 * u16(a[8]) + a[9],
-                    256 * u16(a[10]) + a[11],
-                    a[12],
-                    a[13],
-                    a[14],
-                    a[15],
-                );
-            }
-
-            // Replace longest /(^0|:)[:0]{2,}/ with "::"
-            var i: usize = 0;
-            var j: usize = undefined;
-            var best = i;
-            var max: usize = 2;
-
-            while (i < buf.len) : (i += 1) {
-                if ((i != 0) and buf[i] != ':') continue;
-                j = strspn(buf[i..buf.len], ":0");
-                if (j > max) {
-                    best = i;
-                    max = j;
-                }
-            }
-
-            if (max > 3) {
-                buf[best] = ':';
-                buf[best + 1] = ':';
-
-                var best_max = best + max;
-
-                // the slice here is ported from musl but it got some
-                // alterations, especially on the start index of this slice.
-                // there could be some improvements here
-                var copy_src = buf_main[best_max + 1 .. best_max + (i - best - max + 1)];
-                std.mem.copy(
-                    u8,
-                    buf[best + 2 ..],
-                    copy_src,
-                );
-
-                buf = buf[0 .. best + 2 + copy_src.len];
-            }
-
-            // TODO check IPNET6_ADDRSTRLEN and if buf.len is less than that,
-            // write it
-            try stream.write(buf);
-
-            allocator.free(buf_main);
-            break :blk;
+        .A, .AAAA => |addr| {
+            try stream.print("{}", addr);
         },
 
         .CNAME => try printName(stream, rdata.CNAME),

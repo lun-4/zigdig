@@ -104,7 +104,7 @@ pub fn printPacket(pkt: DNSPacket) !void {
 /// Sends pkt over a given socket directed by `addr`, returns a boolean
 /// if this was successful or not. A value of false should direct clients
 /// to follow the next nameserver in the list.
-fn resolve(allocator: *Allocator, addr: *std.net.Address, pkt: DNSPacket) !bool {
+fn resolve(allocator: *Allocator, addr: *std.net.IpAddress, pkt: DNSPacket) !bool {
     // TODO this fails on linux when addr is an ip6 addr...
     var sockfd = try proto.openDNSSocket();
     errdefer std.os.close(sockfd);
@@ -200,7 +200,7 @@ pub fn main() anyerror!void {
 
         // we don't know if the given nameserver address is ip4 or ip6, so we
         // try parsing it as ip4, then ip6.
-        var ns_addr = try proto.parseIncomingAddr(nameserver, 53);
+        var ns_addr = try std.net.IpAddress.parse(nameserver, 53);
         if (try resolve(allocator, &ns_addr, pkt)) break;
     }
 }

@@ -25,14 +25,10 @@ pub fn openDNSSocket() !i32 {
         flags |= os.SOCK_NONBLOCK;
     }
 
-    return try os.socket(
-        os.AF_INET,
-        flags,
-        os.PROTO_udp,
-    );
+    return try os.socket(os.AF_INET, flags, os.IPPROTO_UDP);
 }
 
-pub fn sendDNSPacket(sockfd: i32, addr: *const std.net.Address, pkt: DNSPacket, buffer: []u8) !void {
+pub fn sendDNSPacket(sockfd: i32, addr: *const std.net.IpAddress, pkt: DNSPacket, buffer: []u8) !void {
     var out = io.SliceOutStream.init(buffer);
     var out_stream = &out.stream;
     var serializer = io.Serializer(.Big, .Bit, OutError).init(out_stream);
@@ -40,7 +36,7 @@ pub fn sendDNSPacket(sockfd: i32, addr: *const std.net.Address, pkt: DNSPacket, 
     try serializer.serialize(pkt);
     try serializer.flush();
 
-    _ = try std.os.sendto(sockfd, buffer, 0, &addr.os_addr, @sizeOf(std.os.sockaddr));
+    _ = try std.os.sendto(sockfd, buffer, 0, &addr.any, @sizeOf(std.os.sockaddr));
 }
 
 fn base64Encode(data: []u8) void {
@@ -65,7 +61,7 @@ pub fn recvDNSPacket(sockfd: os.fd_t, allocator: *Allocator) !DNSPacket {
     return pkt;
 }
 
-pub const AddressArrayList = std.ArrayList(std.net.Address);
+pub const AddressArrayList = std.ArrayList(std.net.IpAddress);
 
 pub const AddressList = struct {
     addrs: AddressArrayList,
@@ -85,24 +81,6 @@ fn toSlicePollFd(allocator: *std.mem.Allocator, fds: []os.fd_t) ![]os.pollfd {
     return pollfds;
 }
 
-/// Parse an incoming address into a std.net.Address.
-/// Tries to first parse it as an IPv4 address, then, if it fails, tries to
-/// parse it as an IPv6 address.
-pub fn parseIncomingAddr(incoming: []const u8, port: u16) !std.net.Address {
-    return blk: {
-        var addr: std.net.Address = undefined;
-
-        var ip4addr = std.net.parseIp4(incoming) catch |_| {
-            var ip6addr = try std.net.parseIp6(incoming);
-            addr = std.net.Address.initIp6(ip6addr, port);
-            break :blk addr;
-        };
-
-        addr = std.net.Address.initIp4(ip4addr, port);
-        break :blk addr;
-    };
-}
-
 pub fn getAddressList(allocator: *std.mem.Allocator, name: []const u8, port: u16) !*AddressList {
     var result = try allocator.create(AddressList);
     result.* = AddressList{
@@ -113,11 +91,11 @@ pub fn getAddressList(allocator: *std.mem.Allocator, name: []const u8, port: u16
     var fd = try openDNSSocket();
 
     var nameservers = try resolv.readNameservers(allocator);
-    var addrs = std.ArrayList(std.net.Address).init(allocator);
+    var addrs = std.ArrayList(std.net.IpAddress).init(allocator);
     defer addrs.deinit();
 
     for (nameservers.toSlice()) |nameserver| {
-        var ns_addr = try parseIncomingAddr(nameserver, 53);
+        var ns_addr = try std.net.IpAddress.parse(nameserver, 53);
         try addrs.append(ns_addr);
     }
 
@@ -157,17 +135,20 @@ pub fn getAddressList(allocator: *std.mem.Allocator, name: []const u8, port: u16
         var pkt_rdata = try rdata.parseRData(pkt, ans, ans.rdata);
         var addr = switch (pkt_rdata) {
             .A => |addr| blk: {
-                break :blk std.net.Address.initIp4(addr.os_addr.in.addr, port);
+                const recast = @ptrCast(*const [4]u8, &addr.in.addr).*;
+                var ip4array: [4]u8 = undefined;
+                for (recast) |byte, idx| {
+                    ip4array[idx] = byte;
+                }
+                break :blk std.net.IpAddress.initIp4(ip4array, port);
             },
             .AAAA => |addr| blk: {
-                var ip6 = std.net.Ip6Addr{ .scope_id = 0, .addr = addr.os_addr.in6.addr };
-                break :blk std.net.Address.initIp6(ip6, port);
+                break :blk std.net.IpAddress.initIp6(addr.in6.addr, port, 0, 0);
             },
             else => unreachable,
         };
 
         try result.addrs.append(addr);
-        return result;
     }
 
     return result;

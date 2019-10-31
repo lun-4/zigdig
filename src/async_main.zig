@@ -7,7 +7,7 @@ pub const io_mode = .evented;
 pub fn main() anyerror!void {
     if (io_mode == .evented) {
         const loop = std.event.Loop.instance.?;
-        try loop.init(std.heap.direct_allocator);
+        try loop.init();
         defer loop.deinit();
 
         var result: @typeOf(asyncMain).ReturnType.ErrorSet!void = undefined;
