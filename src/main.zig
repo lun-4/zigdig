@@ -69,7 +69,7 @@ pub fn printPacket(pkt: DNSPacket) !void {
 
         for (pkt.questions.toSlice()) |question| {
             std.debug.warn(
-                "{}.\t{}\t{}\n",
+                ";{}.\t{}\t{}\n",
                 try question.qname.toStr(pkt.allocator),
                 @tagName(question.qtype),
                 types.classToStr(question.qclass),
