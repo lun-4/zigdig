@@ -198,22 +198,9 @@ pub fn main() anyerror!void {
     for (nameservers.toSlice()) |nameserver| {
         if (nameserver[0] == 0) continue;
 
-        //var nameserver = "0:0:0:0:0:0:0:1";
-
         // we don't know if the given nameserver address is ip4 or ip6, so we
         // try parsing it as ip4, then ip6.
-        var addr: std.net.Address = undefined;
-
-        var ip4addr = std.net.parseIp4(nameserver) catch |err| {
-            // TODO parseIp6 isn't very robust right now. ::1 doesn't work, but
-            // 0:0:0:0:0:0:0:1 does.
-            var ip6addr = try std.net.parseIp6(nameserver);
-            addr = std.net.Address.initIp6(ip6addr, 53);
-            if (try resolve(allocator, &addr, pkt)) break;
-            continue;
-        };
-
-        addr = std.net.Address.initIp4(ip4addr, 53);
-        if (try resolve(allocator, &addr, pkt)) break;
+        var ns_addr = try proto.parseIncomingAddr(nameserver);
+        if (try resolve(allocator, &ns_addr, pkt)) break;
     }
 }

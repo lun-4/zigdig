@@ -85,6 +85,21 @@ fn toSlicePollFd(allocator: *std.mem.Allocator, fds: []os.fd_t) ![]os.pollfd {
     return pollfds;
 }
 
+pub fn parseIncomingAddr(incoming: []const u8) !std.net.Address {
+    return blk: {
+        var addr: std.net.Address = undefined;
+
+        var ip4addr = std.net.parseIp4(incoming) catch |err| {
+            var ip6addr = try std.net.parseIp6(incoming);
+            addr = std.net.Address.initIp6(ip6addr, 53);
+            break :blk addr;
+        };
+
+        addr = std.net.Address.initIp4(ip4addr, 53);
+        break :blk addr;
+    };
+}
+
 pub fn getAddressList(allocator: *std.mem.Allocator, name: []const u8, port: u16) !*AddressList {
     var result = try allocator.create(AddressList);
     result.* = AddressList{
@@ -99,20 +114,7 @@ pub fn getAddressList(allocator: *std.mem.Allocator, name: []const u8, port: u16
     defer addrs.deinit();
 
     for (nameservers.toSlice()) |nameserver| {
-        var ns_addr = blk: {
-            var addr: std.net.Address = undefined;
-            var is_ipv4 = false;
-
-            var ip4addr = std.net.parseIp4(nameserver) catch |err| {
-                var ip6addr = try std.net.parseIp6(nameserver);
-                addr = std.net.Address.initIp6(ip6addr, 53);
-                break :blk addr;
-            };
-
-            addr = std.net.Address.initIp4(ip4addr, 53);
-            break :blk addr;
-        };
-
+        var ns_addr = try parseIncomingAddr(nameserver);
         try addrs.append(ns_addr);
     }
 
