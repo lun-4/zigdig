@@ -15,7 +15,6 @@ const DNSPacket = packet.DNSPacket;
 const DNSPacketRCode = packet.DNSPacketRCode;
 const DNSHeader = packet.DNSHeader;
 
-const DNSError = error{NetError};
 const OutError = io.SliceOutStream.Error;
 const InError = io.SliceInStream.Error;
 
@@ -54,7 +53,6 @@ fn base64Encode(data: []u8) void {
 pub fn recvDNSPacket(sockfd: os.fd_t, allocator: *Allocator) !DNSPacket {
     var buffer = try allocator.alloc(u8, 1024);
     var byte_count = try os.read(sockfd, buffer);
-    if (byte_count == 0) return DNSError.NetError;
 
     var packet_slice = buffer[0..byte_count];
     var pkt = DNSPacket.init(allocator, packet_slice);
