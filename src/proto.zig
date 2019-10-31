@@ -85,17 +85,20 @@ fn toSlicePollFd(allocator: *std.mem.Allocator, fds: []os.fd_t) ![]os.pollfd {
     return pollfds;
 }
 
-pub fn parseIncomingAddr(incoming: []const u8) !std.net.Address {
+/// Parse an incoming address into a std.net.Address.
+/// Tries to first parse it as an IPv4 address, then, if it fails, tries to
+/// parse it as an IPv6 address.
+pub fn parseIncomingAddr(incoming: []const u8, port: u16) !std.net.Address {
     return blk: {
         var addr: std.net.Address = undefined;
 
-        var ip4addr = std.net.parseIp4(incoming) catch |err| {
+        var ip4addr = std.net.parseIp4(incoming) catch |_| {
             var ip6addr = try std.net.parseIp6(incoming);
-            addr = std.net.Address.initIp6(ip6addr, 53);
+            addr = std.net.Address.initIp6(ip6addr, port);
             break :blk addr;
         };
 
-        addr = std.net.Address.initIp4(ip4addr, 53);
+        addr = std.net.Address.initIp4(ip4addr, port);
         break :blk addr;
     };
 }
@@ -114,7 +117,7 @@ pub fn getAddressList(allocator: *std.mem.Allocator, name: []const u8, port: u16
     defer addrs.deinit();
 
     for (nameservers.toSlice()) |nameserver| {
-        var ns_addr = try parseIncomingAddr(nameserver);
+        var ns_addr = try parseIncomingAddr(nameserver, 53);
         try addrs.append(ns_addr);
     }
 

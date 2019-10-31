@@ -200,7 +200,7 @@ pub fn main() anyerror!void {
 
         // we don't know if the given nameserver address is ip4 or ip6, so we
         // try parsing it as ip4, then ip6.
-        var ns_addr = try proto.parseIncomingAddr(nameserver);
+        var ns_addr = try proto.parseIncomingAddr(nameserver, 53);
         if (try resolve(allocator, &ns_addr, pkt)) break;
     }
 }
