@@ -2,15 +2,15 @@ const std = @import("std");
 const os = std.os;
 const fmt = std.fmt;
 
-const packet = @import("packet.zig");
-const proto = @import("proto.zig");
-const resolv = @import("resolvconf.zig");
-const types = @import("types.zig");
-const rdata = @import("rdata.zig");
+pub const packet = @import("packet.zig");
+pub const proto = @import("proto.zig");
+pub const resolv = @import("resolvconf.zig");
+pub const types = @import("types.zig");
+pub const rdata = @import("rdata.zig");
 
-const DNSPacket = packet.DNSPacket;
-const DNSPacketRCode = packet.DNSPacketRCode;
-const DNSClass = types.DNSClass;
+pub const DNSPacket = packet.DNSPacket;
+pub const DNSPacketRCode = packet.DNSPacketRCode;
+pub const DNSClass = types.DNSClass;
 const Allocator = std.mem.Allocator;
 
 const MainDNSError = error{
@@ -72,7 +72,7 @@ pub fn printPacket(pkt: DNSPacket) !void {
                 ";{}.\t{}\t{}\n",
                 try question.qname.toStr(pkt.allocator),
                 @tagName(question.qtype),
-                types.classToStr(question.qclass),
+                @tagName(question.qclass),
             );
         }
 
@@ -113,7 +113,7 @@ fn resolve(allocator: *Allocator, addr: *std.net.IpAddress, pkt: DNSPacket) !boo
     try proto.sendDNSPacket(sockfd, addr, pkt, buf);
 
     var recvpkt = try proto.recvDNSPacket(sockfd, allocator);
-    std.debug.warn("recv packet: {}\n", recvpkt.header.as_str());
+    std.debug.warn("recv packet: {}\n", recvpkt.header.repr());
 
     // safety checks against unknown udp replies on the same socket
     if (recvpkt.header.id != pkt.header.id) return MainDNSError.UnknownReplyId;
@@ -148,9 +148,9 @@ fn resolve(allocator: *Allocator, addr: *std.net.IpAddress, pkt: DNSPacket) !boo
 pub fn makeDNSPacket(
     allocator: *std.mem.Allocator,
     name: []const u8,
-    qtype: []const u8,
+    qtype_str: []const u8,
 ) !DNSPacket {
-    var qtype_i = try types.strToType(qtype);
+    var qtype = try std.dns.DNSType.fromStr(qtype_str);
     var pkt = DNSPacket.init(allocator, ""[0..]);
 
     // set random u16 as the id + all the other goodies in the header
@@ -161,7 +161,7 @@ pub fn makeDNSPacket(
 
     var question = packet.DNSQuestion{
         .qname = try packet.toDNSName(allocator, name),
-        .qtype = @intToEnum(types.DNSType, qtype_i),
+        .qtype = qtype,
         .qclass = DNSClass.IN,
     };
 
@@ -190,7 +190,7 @@ pub fn main() anyerror!void {
     });
 
     var pkt = try makeDNSPacket(allocator, name, qtype);
-    std.debug.warn("sending packet: {}\n", pkt.header.as_str());
+    std.debug.warn("sending packet: {}\n", pkt.header.repr());
 
     // read /etc/resolv.conf for nameserver
     var nameservers = try resolv.readNameservers(allocator);
