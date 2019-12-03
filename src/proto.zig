@@ -6,14 +6,14 @@ const io = std.io;
 
 const Allocator = std.mem.Allocator;
 
-const packet = @import("packet.zig");
 const resolv = @import("resolvconf.zig");
 const main = @import("main.zig");
 const rdata = @import("rdata.zig");
+const dns = std.dns;
 
-const DNSPacket = packet.DNSPacket;
-const DNSPacketRCode = packet.DNSPacketRCode;
-const DNSHeader = packet.DNSHeader;
+const DNSPacket = dns.Packet;
+const DNSPacketRCode = dns.DNSPacketRCode;
+const DNSHeader = dns.Header;
 
 const OutError = io.SliceOutStream.Error;
 const InError = io.SliceInStream.Error;
@@ -28,7 +28,7 @@ pub fn openDNSSocket() !i32 {
     return try os.socket(os.AF_INET, flags, os.IPPROTO_UDP);
 }
 
-pub fn sendDNSPacket(sockfd: i32, addr: *const std.net.IpAddress, pkt: DNSPacket, buffer: []u8) !void {
+pub fn sendDNSPacket(sockfd: i32, addr: *const std.net.Address, pkt: DNSPacket, buffer: []u8) !void {
     var out = io.SliceOutStream.init(buffer);
     var out_stream = &out.stream;
     var serializer = io.Serializer(.Big, .Bit, OutError).init(out_stream);
@@ -55,13 +55,13 @@ pub fn recvDNSPacket(sockfd: os.fd_t, allocator: *Allocator) !DNSPacket {
 
     var in = io.SliceInStream.init(packet_slice);
     var in_stream = &in.stream;
-    var deserializer = packet.DNSDeserializer.init(in_stream);
+    var deserializer = dns.DNSDeserializer.init(in_stream);
 
     try deserializer.deserializeInto(&pkt);
     return pkt;
 }
 
-pub const AddressArrayList = std.ArrayList(std.net.IpAddress);
+pub const AddressArrayList = std.ArrayList(std.net.Address);
 
 pub const AddressList = struct {
     addrs: AddressArrayList,
@@ -91,11 +91,11 @@ pub fn getAddressList(allocator: *std.mem.Allocator, name: []const u8, port: u16
     var fd = try openDNSSocket();
 
     var nameservers = try resolv.readNameservers(allocator);
-    var addrs = std.ArrayList(std.net.IpAddress).init(allocator);
+    var addrs = std.ArrayList(std.net.Address).init(allocator);
     defer addrs.deinit();
 
     for (nameservers.toSlice()) |nameserver| {
-        var ns_addr = try std.net.IpAddress.parse(nameserver, 53);
+        var ns_addr = try std.net.Address.parse(nameserver, 53);
         try addrs.append(ns_addr);
     }
 
@@ -140,10 +140,10 @@ pub fn getAddressList(allocator: *std.mem.Allocator, name: []const u8, port: u16
                 for (recast) |byte, idx| {
                     ip4array[idx] = byte;
                 }
-                break :blk std.net.IpAddress.initIp4(ip4array, port);
+                break :blk std.net.Address.initIp4(ip4array, port);
             },
             .AAAA => |addr| blk: {
-                break :blk std.net.IpAddress.initIp6(addr.in6.addr, port, 0, 0);
+                break :blk std.net.Address.initIp6(addr.in6.addr, port, 0, 0);
             },
             else => unreachable,
         };

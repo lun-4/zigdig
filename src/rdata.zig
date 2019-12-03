@@ -5,6 +5,7 @@ const io = std.io;
 const types = @import("types.zig");
 const packet = @import("packet.zig");
 const err = @import("error.zig");
+const dns = std.dns;
 
 const DNSError = err.DNSError;
 const InError = io.SliceInStream.Error;
@@ -12,8 +13,8 @@ const OutError = io.SliceOutStream.Error;
 const DNSType = types.DNSType;
 
 pub const SOAData = struct {
-    mname: packet.DNSName,
-    rname: packet.DNSName,
+    mname: dns.DNSName,
+    rname: dns.DNSName,
     serial: u32,
     refresh: u32,
     retry: u32,
@@ -23,23 +24,23 @@ pub const SOAData = struct {
 
 pub const MXData = struct {
     preference: u16,
-    exchange: packet.DNSName,
+    exchange: dns.DNSName,
 };
 
 /// DNS RDATA representation to a "native-r" type for nicer usage.
 pub const DNSRData = union(types.DNSType) {
-    A: std.net.IpAddress,
-    AAAA: std.net.IpAddress,
+    A: std.net.Address,
+    AAAA: std.net.Address,
 
-    NS: packet.DNSName,
-    MD: packet.DNSName,
-    MF: packet.DNSName,
-    CNAME: packet.DNSName,
+    NS: dns.DNSName,
+    MD: dns.DNSName,
+    MF: dns.DNSName,
+    CNAME: dns.DNSName,
     SOA: SOAData,
 
-    MB: packet.DNSName,
-    MG: packet.DNSName,
-    MR: packet.DNSName,
+    MB: dns.DNSName,
+    MG: dns.DNSName,
+    MR: dns.DNSName,
 
     // ????
     NULL: void,
@@ -50,14 +51,14 @@ pub const DNSRData = union(types.DNSType) {
         proto: u8,
         // how to define bit map? align(8)?
     },
-    PTR: packet.DNSName,
+    PTR: dns.DNSName,
     HINFO: struct {
         cpu: []const u8,
         os: []const u8,
     },
     MINFO: struct {
-        rmailbx: packet.DNSName,
-        emailbx: packet.DNSName,
+        rmailbx: dns.DNSName,
+        emailbx: dns.DNSName,
     },
     MX: MXData,
     TXT: [][]const u8,
@@ -67,9 +68,9 @@ pub const DNSRData = union(types.DNSType) {
 /// DNSPacket for allocator purposes and the original DNSResource for
 /// TYPE detection.
 pub fn parseRData(
-    pkt_const: packet.DNSPacket,
-    resource: packet.DNSResource,
-    opaque: packet.OpaqueDNSRData,
+    pkt_const: dns.Packet,
+    resource: dns.Resource,
+    opaque: dns.OpaqueDNSRData,
 ) !DNSRData {
     var pkt = pkt_const;
 
@@ -86,7 +87,7 @@ pub fn parseRData(
             }
 
             break :blk DNSRData{
-                .A = std.net.IpAddress.initIp4(ip4addr, 0),
+                .A = std.net.Address.initIp4(ip4addr, 0),
             };
         },
         .AAAA => blk: {
@@ -97,7 +98,7 @@ pub fn parseRData(
             }
 
             break :blk DNSRData{
-                .AAAA = std.net.IpAddress.initIp6(ip6_addr, 0, 0, 0),
+                .AAAA = std.net.Address.initIp6(ip6_addr, 0, 0, 0),
             };
         },
 
@@ -147,7 +148,7 @@ pub fn parseRData(
 }
 
 /// Serialize a DNSName
-fn serialName(serializer: var, name: packet.DNSName) !void {
+fn serialName(serializer: var, name: dns.DNSName) !void {
     try serializer.serialize(name.labels.len);
     for (name.labels) |label| {
         try serializer.serialize(label);
@@ -156,9 +157,9 @@ fn serialName(serializer: var, name: packet.DNSName) !void {
 
 /// Serialize a given DNSRData into OpaqueDNSRData.
 pub fn serializeRData(
-    pkt: *packet.DNSPacket,
+    pkt: *dns.DNSPacket,
     rdata: DNSRData,
-) !packet.OpaqueDNSRData {
+) !dns.OpaqueDNSRData {
     // TODO a nice idea would be to maybe implement a fixed buffer allocator
     // or a way for the serializer's underlying stream
     // to allocate memory on-demand?
@@ -205,7 +206,7 @@ pub fn serializeRData(
 
 fn printName(
     stream: *std.io.OutStream(OutError),
-    name: packet.DNSName,
+    name: dns.DNSName,
 ) !void {
     // This doesn't use the name since we can just write to the stream.
     for (name.labels) |label| {

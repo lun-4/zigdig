@@ -2,15 +2,16 @@ const std = @import("std");
 const os = std.os;
 const fmt = std.fmt;
 
-pub const packet = @import("packet.zig");
 pub const proto = @import("proto.zig");
 pub const resolv = @import("resolvconf.zig");
 pub const types = @import("types.zig");
 pub const rdata = @import("rdata.zig");
 
-pub const DNSPacket = packet.DNSPacket;
-pub const DNSPacketRCode = packet.DNSPacketRCode;
-pub const DNSClass = types.DNSClass;
+const dns = std.dns;
+
+pub const DNSPacket = dns.Packet;
+pub const DNSPacketRCode = dns.DNSPacketRCode;
+pub const DNSClass = dns.DNSClass;
 const Allocator = std.mem.Allocator;
 
 const MainDNSError = error{
@@ -26,7 +27,7 @@ test "zigdig" {
 }
 
 /// Print a slice of DNSResource to stderr.
-fn printList(pkt: packet.DNSPacket, resource_list: packet.ResourceList) !void {
+fn printList(pkt: DNSPacket, resource_list: dns.ResourceList) !void {
     // TODO the formatting here is not good...
     std.debug.warn(";;name\t\t\trrtype\tclass\tttl\trdata\n");
 
@@ -104,7 +105,7 @@ pub fn printPacket(pkt: DNSPacket) !void {
 /// Sends pkt over a given socket directed by `addr`, returns a boolean
 /// if this was successful or not. A value of false should direct clients
 /// to follow the next nameserver in the list.
-fn resolve(allocator: *Allocator, addr: *std.net.IpAddress, pkt: DNSPacket) !bool {
+fn resolve(allocator: *Allocator, addr: *std.net.Address, pkt: DNSPacket) !bool {
     // TODO this fails on linux when addr is an ip6 addr...
     var sockfd = try proto.openDNSSocket();
     errdefer std.os.close(sockfd);
@@ -159,8 +160,8 @@ pub fn makeDNSPacket(
     pkt.header.id = random_id;
     pkt.header.rd = true;
 
-    var question = packet.DNSQuestion{
-        .qname = try packet.toDNSName(allocator, name),
+    var question = dns.Question{
+        .qname = try dns.DNSName.fromString(allocator, name),
         .qtype = qtype,
         .qclass = DNSClass.IN,
     };
@@ -200,7 +201,7 @@ pub fn main() anyerror!void {
 
         // we don't know if the given nameserver address is ip4 or ip6, so we
         // try parsing it as ip4, then ip6.
-        var ns_addr = try std.net.IpAddress.parse(nameserver, 53);
+        var ns_addr = try std.net.Address.parseIp(nameserver, 53);
         if (try resolve(allocator, &ns_addr, pkt)) break;
     }
 }
