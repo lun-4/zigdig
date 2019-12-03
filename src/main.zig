@@ -4,7 +4,6 @@ const fmt = std.fmt;
 
 pub const proto = @import("proto.zig");
 pub const resolv = @import("resolvconf.zig");
-pub const types = @import("types.zig");
 pub const rdata = @import("rdata.zig");
 
 const dns = std.dns;

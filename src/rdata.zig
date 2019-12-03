@@ -2,15 +2,13 @@
 const std = @import("std");
 const io = std.io;
 
-const types = @import("types.zig");
-const packet = @import("packet.zig");
 const err = @import("error.zig");
 const dns = std.dns;
 
 const DNSError = err.DNSError;
 const InError = io.SliceInStream.Error;
 const OutError = io.SliceOutStream.Error;
-const DNSType = types.DNSType;
+const DNSType = dns.DNSType;
 
 pub const SOAData = struct {
     mname: dns.DNSName,
@@ -28,7 +26,7 @@ pub const MXData = struct {
 };
 
 /// DNS RDATA representation to a "native-r" type for nicer usage.
-pub const DNSRData = union(types.DNSType) {
+pub const DNSRData = union(dns.DNSType) {
     A: std.net.Address,
     AAAA: std.net.Address,
 
@@ -77,7 +75,7 @@ pub fn parseRData(
     var opaque_val = opaque.value;
     var in = io.SliceInStream.init(opaque_val);
     var in_stream = &in.stream;
-    var deserializer = packet.DNSDeserializer.init(in_stream);
+    var deserializer = dns.DNSDeserializer.init(in_stream);
 
     var rdata = switch (resource.rr_type) {
         .A => blk: {
