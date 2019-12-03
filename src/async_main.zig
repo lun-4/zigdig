@@ -6,6 +6,7 @@ pub const io_mode = .evented;
 
 pub fn main() anyerror!void {
     if (io_mode == .evented) {
+        std.debug.warn("awo\n");
         const loop = std.event.Loop.instance.?;
         try loop.init();
         defer loop.deinit();

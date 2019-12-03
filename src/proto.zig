@@ -95,7 +95,7 @@ pub fn getAddressList(allocator: *std.mem.Allocator, name: []const u8, port: u16
     defer addrs.deinit();
 
     for (nameservers.toSlice()) |nameserver| {
-        var ns_addr = try std.net.Address.parse(nameserver, 53);
+        var ns_addr = try std.net.Address.parseIp(nameserver, 53);
         try addrs.append(ns_addr);
     }
 
