@@ -8,8 +8,8 @@ const Allocator = std.mem.Allocator;
 
 const resolv = @import("resolvconf.zig");
 const main = @import("main.zig");
-const rdata = @import("rdata.zig");
 const dns = std.dns;
+const rdata = dns.rdata;
 
 const DNSPacket = dns.Packet;
 const DNSPacketRCode = dns.DNSPacketRCode;
@@ -132,7 +132,7 @@ pub fn getAddressList(allocator: *std.mem.Allocator, name: []const u8, port: u16
         var ans = pkt.answers.at(0);
         // try main.printPacket(pkt);
         result.canon_name = try ans.name.toStr(allocator);
-        var pkt_rdata = try rdata.parseRData(pkt, ans, ans.rdata);
+        var pkt_rdata = try rdata.parseRData(pkt, ans, ans.opaque_rdata);
         var addr = switch (pkt_rdata) {
             .A => |addr| blk: {
                 const recast = @ptrCast(*const [4]u8, &addr.in.addr).*;

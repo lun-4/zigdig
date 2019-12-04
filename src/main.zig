@@ -6,10 +6,10 @@ pub const proto = @import("proto.zig");
 pub const resolv = @import("resolvconf.zig");
 
 const dns = std.dns;
-const rdata = dns.RData;
+const rdata = dns.rdata;
 
 pub const DNSPacket = dns.Packet;
-pub const DNSPacketRCode = dns.DNSPacketRCode;
+pub const DNSPacketRCode = dns.ResponseCode;
 pub const DNSClass = dns.DNSClass;
 const Allocator = std.mem.Allocator;
 
@@ -31,7 +31,7 @@ fn printList(pkt: DNSPacket, resource_list: dns.ResourceList) !void {
     std.debug.warn(";;name\t\t\trrtype\tclass\tttl\trdata\n");
 
     for (resource_list.toSlice()) |resource| {
-        var pkt_rdata = try rdata.parseRData(pkt, resource, resource.rdata);
+        var pkt_rdata = try rdata.parseRData(pkt, resource, resource.opaque_rdata);
 
         std.debug.warn(
             "{}.\t{}\t{}\t{}\t{}\n",
@@ -119,18 +119,17 @@ fn resolve(allocator: *Allocator, addr: *std.net.Address, pkt: DNSPacket) !bool 
     if (recvpkt.header.id != pkt.header.id) return MainDNSError.UnknownReplyId;
     if (!recvpkt.header.qr_flag) return MainDNSError.GotQuestion;
 
-    switch (@intToEnum(DNSPacketRCode, recvpkt.header.rcode)) {
-        DNSPacketRCode.NoError => {
+    switch (recvpkt.header.rcode) {
+        .NoError => {
             try printPacket(recvpkt);
             return true;
         },
-        DNSPacketRCode.ServFail => {
+        .ServFail => {
             // if SERVFAIL, the resolver should push to the next one.
             return false;
         },
-        DNSPacketRCode.NotImpl, DNSPacketRCode.Refused, DNSPacketRCode.FmtError, DNSPacketRCode.NameErr => {
-            var val = @intToEnum(DNSPacketRCode, recvpkt.header.rcode);
-            std.debug.warn("{}\n", val);
+        .NotImpl, .Refused, .FmtError, .NameErr => {
+            std.debug.warn("response code: {}\n", recvpkt.header.rcode);
             return MainDNSError.RCodeErr;
         },
 
