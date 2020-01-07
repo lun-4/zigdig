@@ -28,76 +28,72 @@ test "zigdig" {
 /// Print a slice of DNSResource to stderr.
 fn printList(pkt: DNSPacket, resource_list: dns.ResourceList) !void {
     // TODO the formatting here is not good...
-    std.debug.warn(";;name\t\t\trrtype\tclass\tttl\trdata\n");
+    std.debug.warn(";;name\t\t\trrtype\tclass\tttl\trdata\n", .{});
 
     for (resource_list.toSlice()) |resource| {
-        var pkt_rdata = try rdata.parseRData(pkt, resource, resource.opaque_rdata);
+        var pkt_rdata = try rdata.deserializeRData(pkt, resource);
 
-        std.debug.warn(
-            "{}.\t{}\t{}\t{}\t{}\n",
+        std.debug.warn("{}.\t{}\t{}\t{}\t{}\n", .{
             try resource.name.toStr(pkt.allocator),
             @tagName(resource.rr_type),
             @tagName(resource.class),
             resource.ttl,
             try rdata.prettyRData(pkt.allocator, pkt_rdata),
-        );
+        });
     }
 
-    std.debug.warn("\n");
+    std.debug.warn("\n", .{});
 }
 
 /// Print a packet to stderr.
 pub fn printPacket(pkt: DNSPacket) !void {
-    std.debug.warn(
-        "id: {}, opcode: {}, rcode: {}\n",
+    std.debug.warn("id: {}, opcode: {}, rcode: {}\n", .{
         pkt.header.id,
         pkt.header.opcode,
         pkt.header.rcode,
-    );
+    });
 
-    std.debug.warn(
-        "qd: {}, an: {}, ns: {}, ar: {}\n\n",
+    std.debug.warn("qd: {}, an: {}, ns: {}, ar: {}\n\n", .{
         pkt.header.qdcount,
         pkt.header.ancount,
         pkt.header.nscount,
         pkt.header.arcount,
-    );
+    });
 
     if (pkt.header.qdcount > 0) {
-        std.debug.warn(";;-- question --\n");
-        std.debug.warn(";;qname\tqtype\tqclass\n");
+        std.debug.warn(";;-- question --\n", .{});
+        std.debug.warn(";;qname\tqtype\tqclass\n", .{});
 
         for (pkt.questions.toSlice()) |question| {
-            std.debug.warn(
-                ";{}.\t{}\t{}\n",
+            std.debug.warn(";{}.\t{}\t{}\n", .{
                 try question.qname.toStr(pkt.allocator),
                 @tagName(question.qtype),
                 @tagName(question.qclass),
-            );
+            });
         }
 
-        std.debug.warn("\n");
+        std.debug.warn("\n", .{});
     }
 
     if (pkt.header.ancount > 0) {
-        std.debug.warn(";; -- answer --\n");
+        std.debug.warn(";; -- answer --\n", .{});
         try printList(pkt, pkt.answers);
     } else {
-        std.debug.warn(";; no answer\n");
+        std.debug.warn(";; no answer\n", .{});
     }
 
     if (pkt.header.nscount > 0) {
-        std.debug.warn(";; -- authority --\n");
+        std.debug.warn(";; -- authority --\n", .{});
         try printList(pkt, pkt.authority);
     } else {
-        std.debug.warn(";; no authority\n\n");
+        std.debug.warn(";; no authority\n\n", .{});
     }
 
     if (pkt.header.ancount > 0) {
-        std.debug.warn(";; -- additional --\n");
+        std.debug.warn(";; -- additional --\n", .{});
         try printList(pkt, pkt.additional);
     } else {
-        std.debug.warn(";; no additional\n\n");
+        std.debug.warn(";; no additional\n\n", .{});
     }
 }
 
@@ -113,7 +109,7 @@ fn resolve(allocator: *Allocator, addr: *std.net.Address, pkt: DNSPacket) !bool 
     try proto.sendDNSPacket(sockfd, addr, pkt, buf);
 
     var recvpkt = try proto.recvDNSPacket(sockfd, allocator);
-    std.debug.warn("recv packet: {}\n", recvpkt.header.repr());
+    std.debug.warn("recv packet: {}\n", .{recvpkt.header});
 
     // safety checks against unknown udp replies on the same socket
     if (recvpkt.header.id != pkt.header.id) return MainDNSError.UnknownReplyId;
@@ -129,12 +125,12 @@ fn resolve(allocator: *Allocator, addr: *std.net.Address, pkt: DNSPacket) !bool 
             return false;
         },
         .NotImpl, .Refused, .FmtError, .NameErr => {
-            std.debug.warn("response code: {}\n", recvpkt.header.rcode);
+            std.debug.warn("response code: {}\n", .{recvpkt.header.rcode});
             return MainDNSError.RCodeErr;
         },
 
         else => {
-            std.debug.warn("unhandled rcode: {}\n", recvpkt.header.rcode);
+            std.debug.warn("unhandled rcode: {}\n", .{recvpkt.header.rcode});
             return false;
         },
     }
@@ -179,17 +175,17 @@ pub fn main() anyerror!void {
     _ = args_it.skip();
 
     const name = try (args_it.next(allocator) orelse {
-        std.debug.warn("no name provided\n");
+        std.debug.warn("no name provided\n", .{});
         return error.InvalidArgs;
     });
 
     const qtype = try (args_it.next(allocator) orelse {
-        std.debug.warn("no qtype provided\n");
+        std.debug.warn("no qtype provided\n", .{});
         return error.InvalidArgs;
     });
 
     var pkt = try makeDNSPacket(allocator, name, qtype);
-    std.debug.warn("sending packet: {}\n", pkt.header.repr());
+    std.debug.warn("sending packet: {}\n", .{pkt.header});
 
     // read /etc/resolv.conf for nameserver
     var nameservers = try resolv.readNameservers(allocator);

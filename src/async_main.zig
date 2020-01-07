@@ -6,12 +6,12 @@ pub const io_mode = .evented;
 
 pub fn main() anyerror!void {
     if (io_mode == .evented) {
-        std.debug.warn("awo\n");
+        std.debug.warn("awo\n", .{});
         const loop = std.event.Loop.instance.?;
         try loop.init();
         defer loop.deinit();
 
-        var result: @typeOf(asyncMain).ReturnType.ErrorSet!void = undefined;
+        var result: @TypeOf(asyncMain).ReturnType.ErrorSet!void = undefined;
         var frame: @Frame(asyncMain) = undefined;
         _ = @asyncCall(&frame, &result, asyncMain, loop);
         loop.run();
@@ -36,9 +36,9 @@ pub fn allMain() anyerror!void {
     defer info.deinit();
 
     if (info.canon_name) |canon| {
-        std.debug.warn("canon name: {}\n", canon);
+        std.debug.warn("canon name: {}\n", .{canon});
     }
     for (info.addrs.toSlice()) |addr| {
-        std.debug.warn("found addr: {}\n", addr);
+        std.debug.warn("found addr: {}\n", .{addr});
     }
 }

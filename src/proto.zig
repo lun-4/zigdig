@@ -43,7 +43,7 @@ fn base64Encode(data: []u8) void {
     var b64_buf: [0x100000]u8 = undefined;
     var encoded = b64_buf[0..std.base64.Base64Encoder.calcSize(data.len)];
     std.base64.standard_encoder.encode(encoded, data);
-    std.debug.warn("b64 encoded: '{}'\n", encoded);
+    std.debug.warn("b64 encoded: '{}'\n", .{encoded});
 }
 
 pub fn recvDNSPacket(sockfd: os.fd_t, allocator: *Allocator) !DNSPacket {
@@ -121,7 +121,7 @@ pub fn getAddressList(allocator: *std.mem.Allocator, name: []const u8, port: u16
         if (incoming.revents == 0) continue;
         if (incoming.revents != os.POLLIN) return error.UnexpectedPollFd;
 
-        std.debug.warn("fd {} is available\n", incoming.fd);
+        std.debug.warn("fd {} is available\n", .{incoming.fd});
         var pkt = try recvDNSPacket(incoming.fd, allocator);
         if (!pkt.header.qr_flag) return error.GotQuestion;
 
@@ -132,7 +132,7 @@ pub fn getAddressList(allocator: *std.mem.Allocator, name: []const u8, port: u16
         var ans = pkt.answers.at(0);
         // try main.printPacket(pkt);
         result.canon_name = try ans.name.toStr(allocator);
-        var pkt_rdata = try rdata.parseRData(pkt, ans, ans.opaque_rdata);
+        var pkt_rdata = try rdata.deserializeRData(pkt, ans);
         var addr = switch (pkt_rdata) {
             .A => |addr| blk: {
                 const recast = @ptrCast(*const [4]u8, &addr.in.addr).*;
