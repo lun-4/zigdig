@@ -169,23 +169,22 @@ pub fn makeDNSPacket(
 }
 
 pub fn main() anyerror!void {
-    var arena = std.heap.ArenaAllocator.init(std.heap.direct_allocator);
-    errdefer arena.deinit();
-
-    const allocator = &arena.allocator;
+    var allocator_instance = std.heap.GeneralPurposeAllocator(.{}){};
+    defer {
+        _ = allocator_instance.deinit();
+    }
+    const allocator = &allocator_instance.allocator;
 
     var stdin = std.io.getStdIn();
-    var stream = &stdin.inStream().stream;
 
     var buffer = try allocator.alloc(u8, 1024);
-    var byte_count = try stream.read(buffer);
+    var byte_count = try stdin.reader().read(buffer);
     var packet_slice = buffer[0..byte_count];
 
     var pkt = DNSPacket.init(allocator, packet_slice);
 
-    var in = io.SliceInStream.init(packet_slice);
-    var in_stream = &in.stream;
-    var deserializer = dns.DNSDeserializer.init(in_stream);
+    var in = dns.FixedStream{ .buffer = packet_slice, .pos = 0 };
+    var deserializer = dns.DNSDeserializer.init(in.reader());
 
     try deserializer.deserializeInto(&pkt);
     try mainlib.printPacket(pkt);
