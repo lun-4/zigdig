@@ -20,8 +20,7 @@ pub fn main() anyerror!void {
         return allMain();
     }
 }
-
-async fn asyncMain(loop: *std.event.Loop) !void {
+fn asyncMain(loop: *std.event.Loop) callconv(.Async) !void {
     loop.beginOneEvent();
     defer loop.finishOneEvent();
 
