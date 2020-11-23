@@ -10,7 +10,7 @@ const rdata = dns.rdata;
 
 pub const DNSPacket = dns.Packet;
 pub const DNSPacketRCode = dns.ResponseCode;
-pub const DNSClass = dns.DNSClass;
+pub const DNSClass = dns.Class;
 const Allocator = std.mem.Allocator;
 
 const MainDNSError = error{
@@ -30,7 +30,7 @@ fn printList(pkt: DNSPacket, resource_list: dns.ResourceList) !void {
     // TODO the formatting here is not good...
     std.debug.warn(";;name\t\t\trrtype\tclass\tttl\trdata\n", .{});
 
-    for (resource_list.toSlice()) |resource| {
+    for (resource_list.items) |resource| {
         var pkt_rdata = try rdata.deserializeRData(pkt, resource);
 
         std.debug.warn("{}.\t{}\t{}\t{}\t{}\n", .{
@@ -38,7 +38,7 @@ fn printList(pkt: DNSPacket, resource_list: dns.ResourceList) !void {
             @tagName(resource.rr_type),
             @tagName(resource.class),
             resource.ttl,
-            try rdata.prettyRData(pkt.allocator, pkt_rdata),
+            pkt_rdata,
         });
     }
 
@@ -64,7 +64,7 @@ pub fn printPacket(pkt: DNSPacket) !void {
         std.debug.warn(";;-- question --\n", .{});
         std.debug.warn(";;qname\tqtype\tqclass\n", .{});
 
-        for (pkt.questions.toSlice()) |question| {
+        for (pkt.questions.items) |question| {
             std.debug.warn(";{}.\t{}\t{}\n", .{
                 try question.qname.toStr(pkt.allocator),
                 @tagName(question.qtype),
@@ -128,11 +128,6 @@ fn resolve(allocator: *Allocator, addr: *std.net.Address, pkt: DNSPacket) !bool 
             std.debug.warn("response code: {}\n", .{recvpkt.header.rcode});
             return MainDNSError.RCodeErr;
         },
-
-        else => {
-            std.debug.warn("unhandled rcode: {}\n", .{recvpkt.header.rcode});
-            return false;
-        },
     }
 }
 
@@ -145,17 +140,19 @@ pub fn makeDNSPacket(
     name: []const u8,
     qtype_str: []const u8,
 ) !DNSPacket {
-    var qtype = try std.dns.DNSType.fromStr(qtype_str);
+    var qtype = try dns.Type.fromStr(qtype_str);
     var pkt = DNSPacket.init(allocator, ""[0..]);
 
     // set random u16 as the id + all the other goodies in the header
-    var r = std.rand.DefaultPrng.init(std.time.timestamp());
+    const seed = @truncate(u64, @bitCast(u128, std.time.nanoTimestamp()));
+    var r = std.rand.DefaultPrng.init(seed);
+
     const random_id = r.random.int(u16);
     pkt.header.id = random_id;
     pkt.header.rd = true;
 
     var question = dns.Question{
-        .qname = try dns.DNSName.fromString(allocator, name),
+        .qname = try dns.Name.fromString(allocator, name),
         .qtype = qtype,
         .qclass = DNSClass.IN,
     };
@@ -192,7 +189,7 @@ pub fn main() anyerror!void {
     // read /etc/resolv.conf for nameserver
     var nameservers = try resolv.readNameservers(allocator);
 
-    for (nameservers.toSlice()) |nameserver| {
+    for (nameservers.items) |nameserver| {
         if (nameserver[0] == 0) continue;
 
         // we don't know if the given nameserver address is ip4 or ip6, so we

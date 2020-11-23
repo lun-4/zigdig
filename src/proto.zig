@@ -8,7 +8,7 @@ const Allocator = std.mem.Allocator;
 
 const resolv = @import("resolvconf.zig");
 const main = @import("main.zig");
-const dns = std.dns;
+const dns = @import("dns");
 const rdata = dns.rdata;
 
 const DNSPacket = dns.Packet;
@@ -16,7 +16,6 @@ const DNSPacketRCode = dns.DNSPacketRCode;
 const DNSHeader = dns.Header;
 
 const OutError = io.SliceOutStream.Error;
-const InError = io.SliceInStream.Error;
 
 /// Returns the socket file descriptor for an UDP socket.
 pub fn openDNSSocket() !i32 {
@@ -29,9 +28,9 @@ pub fn openDNSSocket() !i32 {
 }
 
 pub fn sendDNSPacket(sockfd: i32, addr: *const std.net.Address, pkt: DNSPacket, buffer: []u8) !void {
-    var out = io.SliceOutStream.init(buffer);
-    var out_stream = &out.stream;
-    var serializer = io.Serializer(.Big, .Bit, OutError).init(out_stream);
+    const typ = io.FixedBufferStream([]u8);
+    var stream = typ{ .buffer = buffer, .pos = 0 };
+    var serializer = io.Serializer(.Big, .Bit, typ.Writer).init(stream.writer());
 
     try serializer.serialize(pkt);
     try serializer.flush();
@@ -53,11 +52,11 @@ pub fn recvDNSPacket(sockfd: os.fd_t, allocator: *Allocator) !DNSPacket {
     var packet_slice = buffer[0..byte_count];
     var pkt = DNSPacket.init(allocator, packet_slice);
 
-    var in = io.SliceInStream.init(packet_slice);
-    var in_stream = &in.stream;
-    var deserializer = dns.DNSDeserializer.init(in_stream);
+    var stream = dns.FixedStream{ .buffer = packet_slice, .pos = 0 };
+    var deserializer = dns.DNSDeserializer.init(stream.reader());
 
     try deserializer.deserializeInto(&pkt);
+
     return pkt;
 }
 
@@ -94,7 +93,7 @@ pub fn getAddressList(allocator: *std.mem.Allocator, name: []const u8, port: u16
     var addrs = std.ArrayList(std.net.Address).init(allocator);
     defer addrs.deinit();
 
-    for (nameservers.toSlice()) |nameserver| {
+    for (nameservers.items) |nameserver| {
         var ns_addr = try std.net.Address.parseIp(nameserver, 53);
         try addrs.append(ns_addr);
     }
@@ -105,7 +104,7 @@ pub fn getAddressList(allocator: *std.mem.Allocator, name: []const u8, port: u16
     var buf_a = try allocator.alloc(u8, packet_a.size());
     var buf_aaaa = try allocator.alloc(u8, packet_aaaa.size());
 
-    for (addrs.toSlice()) |addr| {
+    for (addrs.items) |addr| {
         try sendDNSPacket(fd, &addr, packet_a, buf_a);
         try sendDNSPacket(fd, &addr, packet_aaaa, buf_aaaa);
     }

@@ -8,7 +8,7 @@ pub const NameserverList = std.ArrayList([]const u8);
 /// Read the `/etc/resolv.conf` file in the system and return a list
 /// of nameserver addresses
 pub fn readNameservers(allocator: *std.mem.Allocator) !NameserverList {
-    var file = try std.fs.File.openRead("/etc/resolv.conf");
+    var file = try std.fs.cwd().openFile("/etc/resolv.conf", .{ .read = true, .write = false });
     defer file.close();
 
     var nameservers = NameserverList.init(allocator);
@@ -26,7 +26,7 @@ pub fn readNameservers(allocator: *std.mem.Allocator) !NameserverList {
     while (it.next()) |line| {
         if (!mem.startsWith(u8, line, "nameserver ")) continue;
 
-        var ns_it = std.mem.separate(line, " ");
+        var ns_it = std.mem.split(line, " ");
         _ = ns_it.next().?;
         try nameservers.append(ns_it.next().?);
     }

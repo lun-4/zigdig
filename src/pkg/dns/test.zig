@@ -5,8 +5,8 @@ const io = std.io;
 const OutError = io.SliceOutStream.Error;
 const InError = io.SliceInStream.Error;
 
-const dns = std.dns;
-const rdata = std.dns.rdata;
+const dns = @import("../dns.zig");
+const rdata = dns.rdata;
 const Packet = dns.Packet;
 
 test "convert domain string to dns name" {

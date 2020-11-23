@@ -9,8 +9,8 @@ pub const RData = rdata.DNSRData;
 
 pub const QuestionList = std.ArrayList(Question);
 pub const ResourceList = std.ArrayList(Resource);
-const InError = std.io.SliceInStream.Error;
-pub const DNSDeserializer = std.io.Deserializer(.Big, .Bit, InError);
+pub const FixedStream = std.io.FixedBufferStream([]const u8);
+pub const DNSDeserializer = std.io.Deserializer(.Big, .Bit, FixedStream.Reader);
 pub const Error = error{
     UnknownType,
     RDATANotSupported,
@@ -160,12 +160,12 @@ pub const Name = struct {
         if (domain.len > 255) return error.Overflow;
 
         const period_count = blk: {
-            var it = std.mem.separate(domain, ".");
+            var it = std.mem.split(domain, ".");
             var count: usize = 0;
             while (it.next()) |_| count += 1;
             break :blk count;
         };
-        var it = std.mem.separate(domain, ".");
+        var it = std.mem.split(domain, ".");
 
         var labels: [][]const u8 = try allocator.alloc([]u8, period_count);
         var labels_idx: usize = 0;
@@ -192,20 +192,13 @@ pub const Name = struct {
     }
 
     /// Format the given DNS name.
-    pub fn format(
-        self: @This(),
-        comptime f: []const u8,
-        options: fmt.FormatOptions,
-        context: anytype,
-        comptime Errors: type,
-        output: fn (@TypeOf(context), []const u8) Errors!void,
-    ) Errors!void {
+    pub fn format(self: @This(), comptime f: []const u8, options: fmt.FormatOptions, writer: anytype) !void {
         if (f.len != 0) {
             @compileError("Unknown format character: '" ++ f ++ "'");
         }
 
         for (self.labels) |label| {
-            try fmt.format(context, Errors, output, "{}.", .{label});
+            try fmt.format(writer, "{}.", .{label});
         }
     }
 };
@@ -334,20 +327,20 @@ pub const Packet = struct {
         serializer: anytype,
         rlist: ResourceList,
     ) !void {
-        for (rlist.toSlice()) |resource| {
+        for (rlist.items) |resource| {
             try serializer.serialize(resource);
         }
     }
 
     pub fn serialize(self: Packet, serializer: anytype) !void {
-        std.debug.assert(self.header.qdcount == self.questions.len);
-        std.debug.assert(self.header.ancount == self.answers.len);
-        std.debug.assert(self.header.nscount == self.authority.len);
-        std.debug.assert(self.header.arcount == self.additional.len);
+        std.debug.assert(self.header.qdcount == self.questions.items.len);
+        std.debug.assert(self.header.ancount == self.answers.items.len);
+        std.debug.assert(self.header.nscount == self.authority.items.len);
+        std.debug.assert(self.header.arcount == self.additional.items.len);
 
         try serializer.serialize(self.header);
 
-        for (self.questions.toSlice()) |question| {
+        for (self.questions.items) |question| {
             try serializer.serialize(question.qname);
             try serializer.serialize(question.qtype);
             try serializer.serialize(@enumToInt(question.qclass));
@@ -385,9 +378,8 @@ pub const Packet = struct {
         if (offset_size_opt) |offset_size| {
             var start_slice = self.raw_bytes[ptr_offset .. ptr_offset + (offset_size + 1)];
 
-            var in = std.io.SliceInStream.init(start_slice);
-            var in_stream = &in.stream;
-            var new_deserializer = DNSDeserializer.init(in_stream);
+            var in = FixedStream{ .buffer = start_slice, .pos = 0 };
+            var new_deserializer = DNSDeserializer.init(in.reader());
 
             // the old (nonfunctional approach) a simpleDeserializeName
             // to counteract the problems with just slapping deserializeName
@@ -488,7 +480,6 @@ pub const Packet = struct {
                         }
                     },
                     .Label => |label_val| labels[labels_idx] = label_val,
-                    else => unreachable,
                 }
             } else {
                 break;
@@ -597,7 +588,7 @@ pub const Packet = struct {
     fn sliceSizes(self: Self) usize {
         var pkt_size: usize = 0;
 
-        for (self.questions.toSlice()) |question| {
+        for (self.questions.items) |question| {
             pkt_size += question.qname.size();
 
             // add both qtype and qclass (both u16's)
@@ -605,15 +596,15 @@ pub const Packet = struct {
             pkt_size += @sizeOf(u16);
         }
 
-        for (self.answers.toSlice()) |resource| {
+        for (self.answers.items) |resource| {
             pkt_size += resource.size();
         }
 
-        for (self.authority.toSlice()) |resource| {
+        for (self.authority.items) |resource| {
             pkt_size += resource.size();
         }
 
-        for (self.additional.toSlice()) |resource| {
+        for (self.additional.items) |resource| {
             pkt_size += resource.size();
         }
 

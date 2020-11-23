@@ -3,7 +3,7 @@ const std = @import("std");
 const io = std.io;
 const fmt = std.fmt;
 
-const dns = std.dns;
+const dns = @import("../dns.zig");
 const InError = io.SliceInStream.Error;
 const OutError = io.SliceOutStream.Error;
 const Type = dns.Type;
@@ -82,24 +82,17 @@ pub const DNSRData = union(Type) {
 
     /// Format the RData into a prettier version of it.
     /// For example, A rdata would be formatted to its ipv4 address.
-    pub fn format(
-        self: @This(),
-        comptime f: []const u8,
-        options: fmt.FormatOptions,
-        context: anytype,
-        comptime Errors: type,
-        output: fn (@TypeOf(context), []const u8) Errors!void,
-    ) Errors!void {
+    pub fn format(self: @This(), comptime f: []const u8, options: fmt.FormatOptions, writer: anytype) !void {
         if (f.len != 0) {
             @compileError("Unknown format character: '" ++ f ++ "'");
         }
 
         switch (self) {
-            .A, .AAAA => |addr| return fmt.format(context, Errors, output, "{}", .{addr}),
+            .A, .AAAA => |addr| return fmt.format(writer, "{}", .{addr}),
 
-            .NS, .MD, .MF, .MB, .MG, .MR, .CNAME, .PTR => |name| return fmt.format(context, Errors, output, "{}", .{name}),
+            .NS, .MD, .MF, .MB, .MG, .MR, .CNAME, .PTR => |name| return fmt.format(writer, "{}", .{name}),
 
-            .SOA => |soa| return fmt.format(context, Errors, output, "{} {} {} {} {} {} {}", .{
+            .SOA => |soa| return fmt.format(writer, "{} {} {} {} {} {} {}", .{
                 soa.mname,
                 soa.rname,
                 soa.serial,
@@ -109,17 +102,17 @@ pub const DNSRData = union(Type) {
                 soa.minimum,
             }),
 
-            .MX => |mx| return fmt.format(context, Errors, output, "{} {}", .{ mx.preference, mx.exchange }),
-            .SRV => |srv| return fmt.format(context, Errors, output, "{} {} {} {}", .{
+            .MX => |mx| return fmt.format(writer, "{} {}", .{ mx.preference, mx.exchange }),
+            .SRV => |srv| return fmt.format(writer, "{} {} {} {}", .{
                 srv.priority,
                 srv.weight,
                 srv.port,
                 srv.target,
             }),
 
-            else => return fmt.format(context, Errors, output, "TODO support {}", .{@tagName(self)}),
+            else => return fmt.format(writer, "TODO support {}", .{@tagName(self)}),
         }
-        return fmt.format(context, Errors, output, "{}");
+        return fmt.format(writer, "{}");
     }
 };
 
@@ -131,9 +124,8 @@ pub fn deserializeRData(
 ) !DNSRData {
     var pkt = pkt_const;
 
-    var in = io.SliceInStream.init(resource.opaque_rdata);
-    var in_stream = &in.stream;
-    var deserializer = dns.DNSDeserializer.init(in_stream);
+    var in = dns.FixedStream{ .buffer = resource.opaque_rdata, .pos = 0 };
+    var deserializer = dns.DNSDeserializer.init(in.reader());
 
     var rdata = switch (resource.rr_type) {
         .A => blk: {
@@ -209,7 +201,7 @@ pub fn deserializeRData(
             };
         },
 
-        else => blk: {
+        else => {
             return error.InvalidRData;
         },
     };

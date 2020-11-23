@@ -3,7 +3,7 @@ const os = std.os;
 const fmt = std.fmt;
 const io = std.io;
 
-const dns = std.dns;
+const dns = @import("dns");
 const rdata = dns.rdata;
 
 pub const DNSPacket = dns.Packet;
@@ -29,7 +29,7 @@ fn printList(pkt: DNSPacket, resource_list: dns.ResourceList) !void {
     // TODO the formatting here is not good...
     std.debug.warn(";;name\t\t\trrtype\tclass\tttl\trdata\n");
 
-    for (resource_list.toSlice()) |resource| {
+    for (resource_list.items) |resource| {
         var pkt_rdata = try rdata.parseRData(pkt, resource, resource.opaque_rdata);
 
         std.debug.warn(
@@ -66,7 +66,7 @@ pub fn printPacket(pkt: DNSPacket) !void {
         std.debug.warn(";;-- question --\n");
         std.debug.warn(";;qname\tqtype\tqclass\n");
 
-        for (pkt.questions.toSlice()) |question| {
+        for (pkt.questions.items) |question| {
             std.debug.warn(
                 ";{}.\t{}\t{}\n",
                 try question.qname.toStr(pkt.allocator),
@@ -148,7 +148,7 @@ pub fn makeDNSPacket(
     name: []const u8,
     qtype_str: []const u8,
 ) !DNSPacket {
-    var qtype = try std.dns.DNSType.fromStr(qtype_str);
+    var qtype = try dns.DNSType.fromStr(qtype_str);
     var pkt = DNSPacket.init(allocator, ""[0..]);
 
     // set random u16 as the id + all the other goodies in the header
