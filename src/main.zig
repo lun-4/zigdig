@@ -166,10 +166,12 @@ pub fn makeDNSPacket(
 }
 
 pub fn main() anyerror!void {
-    var arena = std.heap.ArenaAllocator.init(std.heap.direct_allocator);
-    errdefer arena.deinit();
+    var allocator_instance = std.heap.GeneralPurposeAllocator(.{}){};
+    defer {
+        _ = allocator_instance.deinit();
+    }
+    const allocator = &allocator_instance.allocator;
 
-    const allocator = &arena.allocator;
     var args_it = std.process.args();
 
     _ = args_it.skip();
