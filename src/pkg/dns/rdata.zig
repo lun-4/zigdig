@@ -86,7 +86,7 @@ pub const DNSRData = union(Type) {
         self: @This(),
         comptime f: []const u8,
         options: fmt.FormatOptions,
-        context: var,
+        context: anytype,
         comptime Errors: type,
         output: fn (@TypeOf(context), []const u8) Errors!void,
     ) Errors!void {
@@ -220,7 +220,7 @@ pub fn deserializeRData(
 /// Serialize a given DNSRData into []u8
 pub fn serializeRData(
     rdata: DNSRData,
-    serializer: var,
+    serializer: anytype,
 ) !void {
     switch (rdata) {
         .A => |addr| try serializer.serialize(addr.in.addr),

@@ -178,7 +178,7 @@ pub const Name = struct {
         return Name{ .labels = labels[0..] };
     }
 
-    pub fn serialize(self: @This(), serializer: var) !void {
+    pub fn serialize(self: @This(), serializer: anytype) !void {
         for (self.labels) |label| {
             std.debug.assert(label.len < 255);
             try serializer.serialize(@intCast(u8, label.len));
@@ -196,7 +196,7 @@ pub const Name = struct {
         self: @This(),
         comptime f: []const u8,
         options: fmt.FormatOptions,
-        context: var,
+        context: anytype,
         comptime Errors: type,
         output: fn (@TypeOf(context), []const u8) Errors!void,
     ) Errors!void {
@@ -245,7 +245,7 @@ pub const Resource = struct {
         return res_size;
     }
 
-    pub fn serialize(self: @This(), serializer: var) !void {
+    pub fn serialize(self: @This(), serializer: anytype) !void {
         try serializer.serialize(self.name);
         try serializer.serialize(self.rr_type);
         try serializer.serialize(self.class);
@@ -274,7 +274,7 @@ const LabelComponent = union(enum) {
 /// This is required because of the following facts:
 ///  - nonasync stack-allocated recursive functions must have explicit error sets.
 ///  - std.io.Deserializer's error set is not stable.
-fn inDeserial(deserializer: var, comptime T: type) Error!T {
+fn inDeserial(deserializer: anytype, comptime T: type) Error!T {
     return deserializer.deserialize(T) catch |_| {
         return Error.DeserialFail;
     };
@@ -331,7 +331,7 @@ pub const Packet = struct {
     /// Serialize a ResourceList.
     fn serializeRList(
         self: Packet,
-        serializer: var,
+        serializer: anytype,
         rlist: ResourceList,
     ) !void {
         for (rlist.toSlice()) |resource| {
@@ -339,7 +339,7 @@ pub const Packet = struct {
         }
     }
 
-    pub fn serialize(self: Packet, serializer: var) !void {
+    pub fn serialize(self: Packet, serializer: anytype) !void {
         std.debug.assert(self.header.qdcount == self.questions.len);
         std.debug.assert(self.header.ancount == self.answers.len);
         std.debug.assert(self.header.nscount == self.authority.len);
@@ -361,7 +361,7 @@ pub const Packet = struct {
     fn deserializePointer(
         self: *Self,
         ptr_offset_1: u8,
-        deserializer: var,
+        deserializer: anytype,
     ) (Error || Allocator.Error)![][]const u8 {
         // we need to read another u8 and merge both ptr_prefix_1 and the
         // u8 we read into an u16
@@ -412,7 +412,7 @@ pub const Packet = struct {
     /// A Pointer or a full Label.
     fn deserializeLabel(
         self: *Self,
-        deserializer: var,
+        deserializer: anytype,
     ) (Error || Allocator.Error)!?LabelComponent {
         // check if label is a pointer, this byte will contain 11 as the starting
         // point of it
@@ -502,7 +502,7 @@ pub const Packet = struct {
 
     /// (almost) Deserialize an RDATA section. This only deserializes to a slice of u8.
     /// Parsing of RDATA sections are in their own dns.rdata module.
-    fn deserializeRData(self: *Self, deserializer: var) ![]u8 {
+    fn deserializeRData(self: *Self, deserializer: anytype) ![]u8 {
         var rdata_length = try deserializer.deserialize(u16);
         var opaque_rdata = try self.allocator.alloc(u8, rdata_length);
         var i: u16 = 0;
@@ -518,7 +518,7 @@ pub const Packet = struct {
     /// header's given count.
     fn deserialResourceList(
         self: *Self,
-        deserializer: var,
+        deserializer: anytype,
         comptime header_field: []const u8,
         rs_list: *ResourceList,
     ) !void {
@@ -546,7 +546,7 @@ pub const Packet = struct {
         }
     }
 
-    pub fn deserialize(self: *Self, deserializer: var) !void {
+    pub fn deserialize(self: *Self, deserializer: anytype) !void {
         self.header = try deserializer.deserialize(Header);
 
         // deserialize our questions, but since they contain Name,
