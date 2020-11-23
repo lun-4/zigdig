@@ -5,7 +5,7 @@ const fmt = std.fmt;
 pub const proto = @import("proto.zig");
 pub const resolv = @import("resolvconf.zig");
 
-const dns = std.dns;
+const dns = @import("pkg/dns.zig");
 const rdata = dns.rdata;
 
 pub const DNSPacket = dns.Packet;
