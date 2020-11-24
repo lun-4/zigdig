@@ -311,6 +311,13 @@ pub const Packet = struct {
         return self;
     }
 
+    pub fn deinit(self: *Self) void {
+        self.questions.deinit();
+        self.answers.deinit();
+        self.authority.deinit();
+        self.additional.deinit();
+    }
+
     /// Return if this packet makes sense, if the headers' provided lengths
     /// match the lengths of the given packets. This is not checked when
     /// serializing.

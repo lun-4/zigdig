@@ -109,6 +109,7 @@ fn resolve(allocator: *Allocator, addr: *std.net.Address, pkt: DNSPacket) !bool 
     try proto.sendDNSPacket(sockfd, addr, pkt, buf);
 
     var recvpkt = try proto.recvDNSPacket(sockfd, allocator);
+    defer recvpkt.deinit();
     std.debug.warn("recv packet: {}\n", .{recvpkt.header});
 
     // safety checks against unknown udp replies on the same socket
@@ -173,12 +174,12 @@ pub fn main() anyerror!void {
 
     _ = args_it.skip();
 
-    const name = try (args_it.next(allocator) orelse {
+    const name = (args_it.nextPosix() orelse {
         std.debug.warn("no name provided\n", .{});
         return error.InvalidArgs;
     });
 
-    const qtype = try (args_it.next(allocator) orelse {
+    const qtype = (args_it.nextPosix() orelse {
         std.debug.warn("no qtype provided\n", .{});
         return error.InvalidArgs;
     });
@@ -188,6 +189,7 @@ pub fn main() anyerror!void {
 
     // read /etc/resolv.conf for nameserver
     var nameservers = try resolv.readNameservers(allocator);
+    defer resolv.freeNameservers(allocator, nameservers);
 
     for (nameservers.items) |nameserver| {
         if (nameserver[0] == 0) continue;
