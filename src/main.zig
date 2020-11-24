@@ -163,7 +163,7 @@ pub fn makeDNSPacket(
     return pkt;
 }
 
-pub fn main() anyerror!void {
+pub fn oldMain() anyerror!void {
     var allocator_instance = std.heap.GeneralPurposeAllocator(.{}){};
     defer {
         _ = allocator_instance.deinit();
@@ -198,5 +198,53 @@ pub fn main() anyerror!void {
         // try parsing it as ip4, then ip6.
         var ns_addr = try std.net.Address.parseIp(nameserver, 53);
         if (try resolve(allocator, &ns_addr, pkt)) break;
+    }
+}
+
+pub fn main() !void {
+    var allocator_instance = std.heap.GeneralPurposeAllocator(.{}){};
+    defer {
+        _ = allocator_instance.deinit();
+    }
+    const allocator = &allocator_instance.allocator;
+
+    var args_it = std.process.args();
+
+    _ = args_it.skip();
+
+    const name = (args_it.nextPosix() orelse {
+        std.debug.warn("no name provided\n", .{});
+        return error.InvalidArgs;
+    });
+
+    const qtype_str = (args_it.nextPosix() orelse {
+        std.debug.warn("no qtype provided\n", .{});
+        return error.InvalidArgs;
+    });
+
+    const qtype = dns.parseQueryType(qtype) catch |err| switch (err) {
+        error.InvalidQueryType => {
+            std.debug.warn("invalid query type provided\n", .{});
+            return error.InvalidArgs;
+        },
+    };
+
+    const packet = try dns.createRequestPacket(name, qtype);
+
+    const sock = try dns.helpers.openSocketAnyResolver();
+    defer sock.close();
+
+    try dns.helpers.sendPacket(sock, packet);
+
+    var buffer: [1024]u8 = undefined;
+    const reply = try dns.helpers.recvPacket(sock, &buffer);
+
+    std.debug.assert(reply.header.id == packet.header.id);
+    std.debug.assert(!reply.header.is_question);
+
+    switch (reply.header.response_code) {
+        .NoError => try printPacket(reply),
+        .ServFail => try printEmpty("SERVFAIL"),
+        .NotImplemented, .Refused, .FormatError, .NameError => @panic("unexpected response code"),
     }
 }
