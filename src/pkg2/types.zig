@@ -1,3 +1,5 @@
+const std = @import("std");
+
 /// Represents a DNS type.
 /// Keep in mind this enum does not declare all possible DNS types.
 pub const ResourceType = enum(u16) {
@@ -52,7 +54,7 @@ pub const ResourceType = enum(u16) {
 
         const type_info = @typeInfo(@This()).Enum;
         inline for (type_info.fields) |field| {
-            if (mem.eql(u8, uppercased, field.name)) {
+            if (std.mem.eql(u8, uppercased, field.name)) {
                 return @intToEnum(@This(), field.value);
             }
         }

@@ -3,9 +3,10 @@ const root = @import("./dns.zig");
 
 /// Create a DNS request packet.
 /// Receives the full DNS name to be resolved, "google.com" (without)
-pub fn createRequestPacket(name_string: []const u8, query_type_string: []const u8) !root.Packet {
-    const query_type = dns.QueryType.fromString(query_type_string) catch return error.InvalidQueryType;
-    const name = dns.Name.fromString(name_string) catch return error.InvalidName;
+pub fn createRequestPacket(allocator: *std.mem.Allocator, name_string: []const u8, resource_type: root.ResourceType) !root.Packet {
+
+    // TODO remove need to allocate here. how?
+    const name = try root.Name.fromString(allocator, name_string);
 
     const seed = @truncate(u64, @bitCast(u128, std.time.nanoTimestamp()));
     var r = std.rand.DefaultPrng.init(seed);
@@ -20,8 +21,8 @@ pub fn createRequestPacket(name_string: []const u8, query_type_string: []const u
         .questions = &[_]root.Question{
             root.Question{
                 .name = name,
-                .query_type = query_type,
-                .query_class = .IN,
+                .typ = resource_type,
+                .class = .IN,
             },
         },
     };

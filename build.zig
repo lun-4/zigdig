@@ -34,8 +34,8 @@ pub fn build(b: *Builder) void {
     // b.default_step.dependOn(&exe2.step);
     // b.default_step.dependOn(&exe3.step);
 
-    lib.addPackagePath("dns", "src/pkg/dns.zig");
-    exe.addPackagePath("dns", "src/pkg/dns.zig");
+    lib.addPackagePath("dns", "src/pkg2/dns.zig");
+    exe.addPackagePath("dns", "src/pkg2/dns.zig");
     // exe2.addPackagePath("dns", "src/pkg/dns.zig");
     // exe3.addPackagePath("dns", "src/pkg/dns.zig");
 

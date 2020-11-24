@@ -5,7 +5,7 @@ const fmt = std.fmt;
 pub const proto = @import("proto.zig");
 pub const resolv = @import("resolvconf.zig");
 
-const dns = @import("pkg/dns.zig");
+const dns = @import("dns");
 const rdata = dns.rdata;
 
 pub const DNSPacket = dns.Packet;
@@ -222,29 +222,30 @@ pub fn main() !void {
         return error.InvalidArgs;
     });
 
-    const qtype = dns.parseQueryType(qtype) catch |err| switch (err) {
-        error.InvalidQueryType => {
+    const qtype = dns.ResourceType.fromString(qtype_str) catch |err| switch (err) {
+        error.InvalidResourceType => {
             std.debug.warn("invalid query type provided\n", .{});
             return error.InvalidArgs;
         },
     };
 
-    const packet = try dns.helpers.createRequestPacket(name, qtype);
+    const packet = try dns.helpers.createRequestPacket(allocator, name, qtype);
+    std.debug.warn("{}\n", .{packet});
 
-    const sock = try dns.helpers.openSocketAnyResolver();
-    defer sock.close();
+    // const sock = try dns.helpers.openSocketAnyResolver();
+    // defer sock.close();
 
-    try dns.helpers.sendPacket(sock, packet);
+    // try dns.helpers.sendPacket(sock, packet);
 
-    var buffer: [1024]u8 = undefined;
-    const reply = try dns.helpers.recvPacket(sock, &buffer);
+    // var buffer: [1024]u8 = undefined;
+    // const reply = try dns.helpers.recvPacket(sock, &buffer);
 
-    std.debug.assert(reply.header.id == packet.header.id);
-    std.debug.assert(!reply.header.is_question);
+    // std.debug.assert(reply.header.id == packet.header.id);
+    // std.debug.assert(!reply.header.is_question);
 
-    switch (reply.header.response_code) {
-        .NoError => try printPacket(reply),
-        .ServFail => try printEmpty("SERVFAIL"),
-        .NotImplemented, .Refused, .FormatError, .NameError => @panic("unexpected response code"),
-    }
+    // switch (reply.header.response_code) {
+    //     .NoError => try printPacket(reply),
+    //     .ServFail => try printEmpty("SERVFAIL"),
+    //     .NotImplemented, .Refused, .FormatError, .NameError => @panic("unexpected response code"),
+    // }
 }

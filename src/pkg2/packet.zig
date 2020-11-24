@@ -5,8 +5,6 @@ const Name = root.Name;
 const ResourceType = root.ResourceType;
 const ResourceClass = root.ResourceClass;
 
-pub const Header = struct {};
-
 pub const ResponseCode = enum(u4) {
     NoError = 0,
     FmtError = 1,
