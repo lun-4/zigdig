@@ -229,7 +229,7 @@ pub fn main() !void {
         },
     };
 
-    const packet = try dns.createRequestPacket(name, qtype);
+    const packet = try dns.helpers.createRequestPacket(name, qtype);
 
     const sock = try dns.helpers.openSocketAnyResolver();
     defer sock.close();
