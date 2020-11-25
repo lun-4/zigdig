@@ -44,7 +44,10 @@ test "Packet serialize/deserialize" {
     var r = std.rand.DefaultPrng.init(seed);
 
     const random_id = r.random.int(u16);
-    var packet = dns.Packet{ .header = .{ .id = random_id }, .questions = &[_]dns.Question{} };
+    var packet = dns.Packet{
+        .header = .{ .id = random_id },
+        .questions = &[_]dns.Question{},
+    };
 
     // then we'll serialize it under a buffer on the stack,
     // deserialize it, and the header.id should be equal to random_id
@@ -147,29 +150,31 @@ fn encodeBase64(buffer: []u8, out: []const u8) []const u8 {
 }
 
 fn encodePacket(buffer: []u8, pkt: Packet) ![]const u8 {
-    var out = try serialTest(pkt.allocator, pkt);
+    var out = try serialTest(pkt);
     return encodeBase64(buffer, out);
 }
 
 test "serialization of google.com/A (question)" {
-    if (true) return error.SkipZigTest;
+    const domain = "google.com";
+    var name_buffer: [2][]const u8 = undefined;
+    var name = try dns.Name.fromString(domain[0..], &name_buffer);
 
-    // setup a random id packet
-    var arena = std.heap.ArenaAllocator.init(std.heap.direct_allocator);
-    defer arena.deinit();
-    const allocator = &arena.allocator;
+    var packet = dns.Packet{
+        .header = .{
+            .id = 5189,
+            .wanted_recursion = true,
+            .z = 2,
+            .question_length = 1,
+        },
+        .questions = &[_]dns.Question{.{
+            .name = name,
+            .typ = .A,
+            .class = .IN,
+        }},
+    };
 
-    var pkt = dns.Packet.init(allocator, ""[0..]);
-    pkt.header.id = 5189;
-    pkt.header.rd = true;
-    pkt.header.z = 2;
-
-    var qname = try dns.Name.fromString(allocator, "google.com");
-
-    try pkt.addQuestion(dns.Question{ .qname = qname, .qtype = .A, .qclass = .IN });
-
-    var buffer: [128]u8 = undefined;
-    var encoded = try encodePacket(&buffer, pkt);
+    var buffer: [256]u8 = undefined;
+    var encoded = try encodePacket(&buffer, packet);
     testing.expectEqualSlices(u8, encoded, TEST_PKT_QUERY);
 }
 
