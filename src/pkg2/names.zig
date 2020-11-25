@@ -34,6 +34,9 @@ pub const Name = struct {
         var it = std.mem.split(domain, ".");
         var idx: usize = 0;
         while (it.next()) |label| {
+            // Is there a better error for this?
+            if (idx > (buffer.len - 1)) return error.Underflow; // buffer too small
+
             buffer[idx] = label;
             idx += 1;
         }

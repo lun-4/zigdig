@@ -10,19 +10,22 @@ const rdata = dns.rdata;
 const Packet = dns.Packet;
 
 test "convert domain string to dns name" {
-    var allocator_instance = std.heap.GeneralPurposeAllocator(.{}){};
-    defer {
-        _ = allocator_instance.deinit();
-    }
-    const allocator = &allocator_instance.allocator;
-
     const domain = "www.google.com";
-    var name_buffer: [5][]const u8 = undefined;
+    var name_buffer: [3][]const u8 = undefined;
     var name = try dns.Name.fromString(domain[0..], &name_buffer);
     std.debug.assert(name.labels.len == 3);
     testing.expect(std.mem.eql(u8, name.labels[0], "www"));
     testing.expect(std.mem.eql(u8, name.labels[1], "google"));
     testing.expect(std.mem.eql(u8, name.labels[2], "com"));
+}
+
+test "convert domain string to dns name (buffer underrun)" {
+    const domain = "www.google.com";
+    var name_buffer: [1][]const u8 = undefined;
+    _ = dns.Name.fromString(domain[0..], &name_buffer) catch |err| switch (err) {
+        error.Underflow => {},
+        else => return err,
+    };
 }
 
 // extracted with 'dig google.com a +noedns'
