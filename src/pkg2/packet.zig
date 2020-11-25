@@ -118,4 +118,56 @@ pub const Resource = struct {
 pub const Packet = struct {
     header: Header,
     questions: []Question,
+
+    const Self = @This();
+
+    fn sliceSizes(self: Self) usize {
+        var pkt_size: usize = 0;
+
+        for (self.questions.items) |question| {
+            pkt_size += question.name.size();
+
+            // add both type and class (both u16's)
+            pkt_size += @sizeOf(u16);
+            pkt_size += @sizeOf(u16);
+        }
+
+        // for (self.answers.items) |resource| {
+        //     pkt_size += resource.size();
+        // }
+
+        // for (self.authority.items) |resource| {
+        //     pkt_size += resource.size();
+        // }
+
+        // for (self.additional.items) |resource| {
+        //     pkt_size += resource.size();
+        // }
+
+        return pkt_size;
+    }
+
+    /// Returns the size in bytes of the binary representation of the packet.
+    pub fn size(self: Self) usize {
+        return @sizeOf(Header) + self.sliceSizes();
+    }
+
+    pub fn serialize(self: Self, serializer: anytype) !void {
+        std.debug.assert(self.header.question_length == self.questions.len);
+        // std.debug.assert(self.header.answer_length == self.answers.len);
+        // std.debug.assert(self.header.nameserver_length == self.authority.len);
+        // std.debug.assert(self.header.additional_length == self.additional.len);
+
+        try serializer.serialize(self.header);
+
+        for (self.questions) |question| {
+            try serializer.serialize(question.name);
+            try serializer.serialize(question.typ);
+            try serializer.serialize(question.class);
+        }
+
+        //try self.serializeRList(serializer, self.answers);
+        //try self.serializeRList(serializer, self.authority);
+        //try self.serializeRList(serializer, self.additional);
+    }
 };
