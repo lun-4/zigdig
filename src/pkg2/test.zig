@@ -206,19 +206,15 @@ test "convert string to dns type" {
 }
 
 test "size() methods are good" {
-    if (true) return error.SkipZigTest;
-    var arena = std.heap.ArenaAllocator.init(std.heap.direct_allocator);
-    defer arena.deinit();
-    const allocator = &arena.allocator;
-
-    var name = try dns.Name.fromString(allocator, "example.com");
+    var name_buffer: [10][]const u8 = undefined;
+    var name = try dns.Name.fromString("example.com", &name_buffer);
 
     // length + data + length + data + null
     testing.expectEqual(@as(usize, 1 + 7 + 1 + 3 + 1), name.size());
 
     var resource = dns.Resource{
         .name = name,
-        .rr_type = .A,
+        .typ = .A,
         .class = .IN,
         .ttl = 300,
         .opaque_rdata = "",
