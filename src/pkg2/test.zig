@@ -17,7 +17,8 @@ test "convert domain string to dns name" {
     const allocator = &allocator_instance.allocator;
 
     const domain = "www.google.com";
-    var name = try dns.Name.fromString(allocator, domain[0..]);
+    var name_buffer: [5][]const u8 = undefined;
+    var name = try dns.Name.fromString(domain[0..], &name_buffer);
     std.debug.assert(name.labels.len == 3);
     testing.expect(std.mem.eql(u8, name.labels[0], "www"));
     testing.expect(std.mem.eql(u8, name.labels[1], "google"));

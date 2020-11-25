@@ -28,27 +28,17 @@ pub const Name = struct {
     }
 
     /// Get a Name out of a domain name ("www.google.com", for example).
-    pub fn fromString(allocator: *std.mem.Allocator, domain: []const u8) !@This() {
-        // TODO make this not require allocator. if max len is 255, [255]u8 can be used.
+    pub fn fromString(domain: []const u8, buffer: [][]const u8) !@This() {
         if (domain.len > 255) return error.Overflow;
 
-        const period_count = blk: {
-            var it = std.mem.split(domain, ".");
-            var count: usize = 0;
-            while (it.next()) |_| count += 1;
-            break :blk count;
-        };
         var it = std.mem.split(domain, ".");
-
-        var labels: [][]const u8 = try allocator.alloc([]u8, period_count);
-        var labels_idx: usize = 0;
-
-        while (labels_idx < period_count) : (labels_idx += 1) {
-            var label = it.next().?;
-            labels[labels_idx] = label;
+        var idx: usize = 0;
+        while (it.next()) |label| {
+            buffer[idx] = label;
+            idx += 1;
         }
 
-        return Name{ .labels = labels[0..] };
+        return @This(){ .labels = buffer[0..idx] };
     }
 
     pub fn serialize(self: @This(), serializer: anytype) !void {
