@@ -53,19 +53,19 @@ test "Packet serialize/deserialize" {
     // deserialize it, and the header.id should be equal to random_id
     var buf = try serialTest(packet);
 
-    // // deserialize it
-    // var new_packet = try deserialTest(allocator, buf);
+    // deserialize it and compare if everythings' equal
+    var deserialized = try deserialTest(buf);
 
-    // testing.expectEqual(new_packet.header.id, packet.header.id);
+    testing.expectEqual(deserialized.header.id, packet.header.id);
 
-    // const fields = [_][]const u8{ "id", "opcode", "qdcount", "ancount" };
+    const fields = [_][]const u8{ "id", "opcode", "question_length", "answer_length" };
 
-    // var new_header = new_packet.header;
-    // var header = packet.header;
+    var new_header = new_packet.header;
+    var header = packet.header;
 
-    // inline for (fields) |field| {
-    //     testing.expectEqual(@field(new_header, field), @field(header, field));
-    // }
+    inline for (fields) |field| {
+        testing.expectEqual(@field(new_header, field), @field(header, field));
+    }
 }
 
 fn decodeBase64(encoded: []const u8) ![]u8 {
@@ -191,12 +191,17 @@ fn serialTest(packet: Packet) ![]u8 {
     return buffer.getWritten();
 }
 
-fn deserialTest(allocator: *Allocator, buf: []u8) !Packet {
-    var in = io.SliceInStream.init(buf);
-    var stream = &in.stream;
-    var deserializer = dns.DNSDeserializer.init(stream);
-    var pkt = Packet.init(allocator, buf);
-    try deserializer.deserializeInto(&pkt);
+const FixedStream = std.io.FixedBufferStream([]const u8);
+const DNSDeserializer = std.io.Deserializer(.Big, .Bit, FixedStream.Reader);
+
+fn deserialTest(buf: []u8, packet_buffer: []u8) !Packet {
+    var stream = FixedStream{ .buffer = buf, .pos = 0 };
+
+    var fba = std.heap.FixedBufferAllocator.init(packet_buffer);
+
+    var pkt = dns.Packet{ .header = .{}, .questions = &[_]dns.Question{} };
+    try pkt.readInto(stream.reader(), &fba.allocator);
+
     return pkt;
 }
 

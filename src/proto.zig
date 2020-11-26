@@ -15,8 +15,6 @@ const DNSPacket = dns.Packet;
 const DNSPacketRCode = dns.DNSPacketRCode;
 const DNSHeader = dns.Header;
 
-const OutError = io.SliceOutStream.Error;
-
 /// Returns the socket file descriptor for an UDP socket.
 pub fn openDNSSocket() !i32 {
     var flags: u32 = os.SOCK_DGRAM;

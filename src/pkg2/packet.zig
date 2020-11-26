@@ -23,7 +23,7 @@ pub const Header = packed struct {
     /// Defines if this is a response packet or not.
     is_response: bool = false,
 
-    /// TODO
+    /// TODO convert to enum
     opcode: i4 = 0,
 
     /// Authoritative Answer flag
@@ -169,5 +169,175 @@ pub const Packet = struct {
         //try self.serializeRList(serializer, self.answers);
         //try self.serializeRList(serializer, self.authority);
         //try self.serializeRList(serializer, self.additional);
+    }
+
+    fn deserializePointer(
+        self: *Self,
+        ptr_offset_1: u8,
+        deserializer: anytype,
+    ) ![][]const u8 {
+        // we need to read another u8 and merge both ptr_prefix_1 and the
+        // u8 we read into an u16
+
+        // the final offset is u14, but we keep it as u16 to prevent having
+        // to do too many complicated things in regards to deserializer state.
+        const ptr_offset_2 = try inDeserial(deserializer, u8);
+
+        // merge them together
+        var ptr_offset: u16 = (ptr_offset_1 << 7) | ptr_offset_2;
+
+        // set first two bits of ptr_offset to zero as they're the
+        // pointer prefix bits (which are always 1, which brings problems)
+        ptr_offset &= ~@as(u16, 1 << 15);
+        ptr_offset &= ~@as(u16, 1 << 14);
+
+        // we need to make a proper [][]const u8 which means
+        // re-deserializing labels but using start_slice instead
+        var offset_size_opt = std.mem.indexOf(u8, self.raw_bytes[ptr_offset..], "\x00");
+
+        if (offset_size_opt) |offset_size| {
+            var start_slice = self.raw_bytes[ptr_offset .. ptr_offset + (offset_size + 1)];
+
+            var in = FixedStream{ .buffer = start_slice, .pos = 0 };
+            var new_deserializer = DNSDeserializer.init(in.reader());
+
+            // the old (nonfunctional approach) a simpleDeserializeName
+            // to counteract the problems with just slapping deserializeName
+            // in and doing recursion. however that's problematic as pointers
+            // could be pointing to other pointers.
+
+            // because of https://github.com/ziglang/zig/issues/1006
+            // and the disallowance of recursive async fns, we heap-allocate this call
+
+            var frame = try self.allocator.create(@Frame(Packet.deserializeName));
+            defer self.allocator.destroy(frame);
+            frame.* = async self.deserializeName(&new_deserializer);
+            var name = try await frame;
+
+            return name.labels;
+        } else {
+            return Error.ParseFail;
+        }
+    }
+
+    /// Deserialize the given label into a LabelComponent, which can be either
+    /// A Pointer or a full Label.
+    fn deserializeLabel(
+        self: *Self,
+        deserializer: anytype,
+    ) (Error || Allocator.Error)!?LabelComponent {
+        // check if label is a pointer, this byte will contain 11 as the starting
+        // point of it
+        var ptr_prefix = try inDeserial(deserializer, u8);
+        if (ptr_prefix == 0) return null;
+
+        var bit1 = (ptr_prefix & (1 << 7)) != 0;
+        var bit2 = (ptr_prefix & (1 << 6)) != 0;
+
+        if (bit1 and bit2) {
+            var labels = try self.deserializePointer(ptr_prefix, deserializer);
+            return LabelComponent{ .Pointer = labels };
+        } else {
+            // the ptr_prefix is currently encoding the label's size
+            var label = try self.allocator.alloc(u8, ptr_prefix);
+
+            // properly deserialize the slice
+            var label_idx: usize = 0;
+            while (label_idx < ptr_prefix) : (label_idx += 1) {
+                label[label_idx] = try inDeserial(deserializer, u8);
+            }
+
+            return LabelComponent{ .Label = label };
+        }
+
+        return null;
+    }
+
+    /// Deserializes a DNS Name
+    pub fn deserializeName(
+        self: *Self,
+        deserial: *DNSDeserializer,
+    ) (Error || Allocator.Error)!Name {
+
+        // Removing this causes the compiler to send a
+        // 'error: recursive function cannot be async'
+        if (std.io.mode == .evented) {
+            _ = @frame();
+        }
+
+        // allocate empty label slice
+        var deserializer = deserial;
+        var labels: [][]const u8 = try self.allocator.alloc([]u8, 0);
+        var labels_idx: usize = 0;
+
+        while (true) {
+            var label = try self.deserializeLabel(deserializer);
+
+            if (label) |denulled_label| {
+                labels = try self.allocator.realloc(labels, (labels_idx + 1));
+
+                switch (denulled_label) {
+                    .Pointer => |label_ptr| {
+                        if (labels_idx == 0) {
+                            return Name{ .labels = label_ptr };
+                        } else {
+                            // in here we have an existing label in the labels slice, e.g "leah",
+                            // and then label_ptr points to a [][]const u8, e.g
+                            // [][]const u8{"ns", "cloudflare", "com"}. we
+                            // need to copy that, as a suffix, to the existing
+                            // labels slice
+                            for (label_ptr) |label_ptr_label, idx| {
+                                labels[labels_idx] = label_ptr_label;
+                                labels_idx += 1;
+
+                                // reallocate to account for the next incoming label
+                                if (idx != label_ptr.len - 1) {
+                                    labels = try self.allocator.realloc(labels, (labels_idx + 1));
+                                }
+                            }
+
+                            return Name{ .labels = labels };
+                        }
+                    },
+                    .Label => |label_val| labels[labels_idx] = label_val,
+                }
+            } else {
+                break;
+            }
+
+            labels_idx += 1;
+        }
+
+        return Name{ .labels = labels };
+    }
+
+    pub fn readInto(
+        self: *Self,
+        reader: anytype,
+        ctx: DeserializationContext,
+    ) !void {
+        const DeserializerType = std.io.Deserializer(.Big, .Bit, @TypeOf(reader));
+        var deserializer = try DeserializerType.init(reader);
+        self.header = try deserializer.deserialize(Header);
+
+        var questions = try std.ArrayList(Question).init(ctx.allocator);
+        self.questions = questions.items;
+
+        var i: usize = 0;
+        while (i < self.header.qdcount) {
+            // question contains {name, qtype, qclass}
+            var name = try self.readName(deserializer, ctx);
+            var qtype = try deserializer.deserialize(u16);
+            var qclass = try deserializer.deserialize(u16);
+
+            var question = Question{
+                .qname = name,
+                .qtype = @intToEnum(Type, qtype),
+                .qclass = @intToEnum(Class, qclass),
+            };
+
+            try questions.append(question);
+            i += 1;
+        }
     }
 };
