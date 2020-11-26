@@ -59,7 +59,7 @@ pub const Header = packed struct {
     /// Amount of nameservers in the packet.
     nameserver_length: u16 = 0,
 
-    /// Amount of additional recordsin the packet.
+    /// Amount of additional records in the packet.
     additional_length: u16 = 0,
 };
 

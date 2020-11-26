@@ -51,7 +51,8 @@ test "Packet serialize/deserialize" {
 
     // then we'll serialize it under a buffer on the stack,
     // deserialize it, and the header.id should be equal to random_id
-    var buf = try serialTest(packet);
+    var write_buffer: [1024]u8 = undefined;
+    const buf = try serialTest(packet, &write_buffer);
 
     // deserialize it and compare if everythings' equal
     var workmem: [1024]u8 = undefined;
@@ -150,9 +151,9 @@ fn encodeBase64(buffer: []u8, out: []const u8) []const u8 {
     return encoded;
 }
 
-fn encodePacket(buffer: []u8, pkt: Packet) ![]const u8 {
-    var out = try serialTest(pkt);
-    return encodeBase64(buffer, out);
+fn encodePacket(pkt: Packet, encode_buffer: []u8, write_buffer: []u8) ![]const u8 {
+    var out = try serialTest(pkt, write_buffer);
+    return encodeBase64(encode_buffer, out);
 }
 
 test "serialization of google.com/A (question)" {
@@ -174,16 +175,16 @@ test "serialization of google.com/A (question)" {
         }},
     };
 
-    var buffer: [256]u8 = undefined;
-    var encoded = try encodePacket(&buffer, packet);
+    var encode_buffer: [256]u8 = undefined;
+    var write_buffer: [256]u8 = undefined;
+    var encoded = try encodePacket(packet, &encode_buffer, &write_buffer);
     testing.expectEqualSlices(u8, encoded, TEST_PKT_QUERY);
 }
 
-fn serialTest(packet: Packet) ![]u8 {
-    var buf: [1024]u8 = undefined;
+fn serialTest(packet: Packet, write_buffer: []u8) ![]u8 {
     const T = std.io.FixedBufferStream([]u8);
 
-    var buffer = T{ .buffer = &buf, .pos = 0 };
+    var buffer = T{ .buffer = write_buffer, .pos = 0 };
     var serializer = io.Serializer(.Big, .Bit, T.Writer).init(buffer.writer());
 
     try serializer.serialize(packet);
@@ -193,12 +194,9 @@ fn serialTest(packet: Packet) ![]u8 {
 }
 
 const FixedStream = std.io.FixedBufferStream([]const u8);
-const DNSDeserializer = std.io.Deserializer(.Big, .Bit, FixedStream.Reader);
-
-fn deserialTest(buf: []u8, packet_buffer: []u8) !Packet {
+fn deserialTest(buf: []const u8, work_memory: []u8) !Packet {
     var stream = FixedStream{ .buffer = buf, .pos = 0 };
-
-    var fba = std.heap.FixedBufferAllocator.init(packet_buffer);
+    var fba = std.heap.FixedBufferAllocator.init(work_memory);
     var ctx = dns.DeserializationContext.init(&fba.allocator);
 
     var pkt = dns.Packet{ .header = .{}, .questions = &[_]dns.Question{} };
