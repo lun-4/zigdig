@@ -8,3 +8,4 @@ const packet = @import("./packet.zig");
 pub const Question = packet.Question;
 pub const Packet = packet.Packet;
 pub const Resource = packet.Resource;
+pub const DeserializationContext = packet.DeserializationContext;

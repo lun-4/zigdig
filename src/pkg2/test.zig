@@ -54,13 +54,14 @@ test "Packet serialize/deserialize" {
     var buf = try serialTest(packet);
 
     // deserialize it and compare if everythings' equal
-    var deserialized = try deserialTest(buf);
+    var workmem: [1024]u8 = undefined;
+    var deserialized = try deserialTest(buf, &workmem);
 
     testing.expectEqual(deserialized.header.id, packet.header.id);
 
     const fields = [_][]const u8{ "id", "opcode", "question_length", "answer_length" };
 
-    var new_header = new_packet.header;
+    var new_header = deserialized.header;
     var header = packet.header;
 
     inline for (fields) |field| {
@@ -198,9 +199,10 @@ fn deserialTest(buf: []u8, packet_buffer: []u8) !Packet {
     var stream = FixedStream{ .buffer = buf, .pos = 0 };
 
     var fba = std.heap.FixedBufferAllocator.init(packet_buffer);
+    var ctx = dns.DeserializationContext.init(&fba.allocator);
 
     var pkt = dns.Packet{ .header = .{}, .questions = &[_]dns.Question{} };
-    try pkt.readInto(stream.reader(), &fba.allocator);
+    try pkt.readInto(stream.reader(), &ctx);
 
     return pkt;
 }

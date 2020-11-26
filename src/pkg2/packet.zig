@@ -115,6 +115,52 @@ pub const Resource = struct {
     }
 };
 
+const StringList = std.ArrayList([]u8);
+const ManyStringList = std.ArrayList([][]u8);
+
+pub const DeserializationContext = struct {
+    allocator: *std.mem.Allocator,
+    label_pool: StringList,
+    name_pool: ManyStringList,
+
+    const Self = @This();
+
+    pub fn init(allocator: *std.mem.Allocator) Self {
+        return Self{
+            .allocator = allocator,
+            .label_pool = StringList.init(allocator),
+            .name_pool = ManyStringList.init(allocator),
+        };
+    }
+
+    pub fn deinit(self: *Self) void {
+        for (self.label_pool.items) |label| {
+            self.allocator.free(label);
+        }
+
+        self.label_pool.deinit();
+
+        for (self.name_pool.items) |item| {
+            self.allocator.free(item);
+        }
+
+        self.name_pool.deinit();
+    }
+
+    pub fn newLabel(self: *Self, length: usize) ![]u8 {
+        var newly_allocated = try self.allocator.alloc(u8, length);
+        // keep track of newly allocated label for deinitting
+        try self.label_pool.append(newly_allocated);
+        return newly_allocated;
+    }
+};
+
+const LabelComponent = union(enum) {
+    Full: []const u8,
+    Pointer: []const u8,
+    Null: void,
+};
+
 pub const Packet = struct {
     header: Header,
     questions: []Question,
@@ -220,120 +266,136 @@ pub const Packet = struct {
         }
     }
 
-    /// Deserialize the given label into a LabelComponent, which can be either
-    /// A Pointer or a full Label.
-    fn deserializeLabel(
+    /// Deserialize a LabelComponent, which can be:
+    ///  - a pointer
+    ///  - a label
+    ///  - a null octet
+    fn readLabel(
         self: *Self,
         deserializer: anytype,
-    ) (Error || Allocator.Error)!?LabelComponent {
-        // check if label is a pointer, this byte will contain 11 as the starting
-        // point of it
-        var ptr_prefix = try inDeserial(deserializer, u8);
-        if (ptr_prefix == 0) return null;
+        ctx: *DeserializationContext,
+    ) !LabelComponent {
+        // pointers, in the binary representation of a byte, are as follows
+        //  1 1 B B B B B B | B B B B B B B B
+        // they are two bytes length, but to identify one, you check if the
+        // first two bits are 1 and 1 respectively.
+        //
+        // then you read the rest, and turn it into an offset (without the
+        // starting bits!!!)
+        //
+        // to prevent inefficiencies, we just read a single bite, see if it
+        // has the starting bits, and then we chop it off, merging with the
+        // next byte. pointer offsets are 14 bits long
+        //
+        // when it isn't a pointer, its a length for a given label, and that
+        // length can only be a single byte.
+        //
+        // if the length is 0, its a null octet
+        var possible_length = try deserializer.deserialize(u8);
+        if (possible_length == 0) return LabelComponent{ .Null = {} };
 
-        var bit1 = (ptr_prefix & (1 << 7)) != 0;
-        var bit2 = (ptr_prefix & (1 << 6)) != 0;
+        // RFC1035:
+        // since the label must begin with two zero bits because
+        // labels are restricted to 63 octets or less.
+
+        var bit1 = (possible_length & (1 << 7)) != 0;
+        var bit2 = (possible_length & (1 << 6)) != 0;
 
         if (bit1 and bit2) {
-            var labels = try self.deserializePointer(ptr_prefix, deserializer);
-            return LabelComponent{ .Pointer = labels };
+            // its a pointer!
+            unreachable;
+            // var labels = try self.deserializePointer(ptr_prefix, deserializer);
+            // return LabelComponent{ .Pointer = labels };
         } else {
-            // the ptr_prefix is currently encoding the label's size
-            var label = try self.allocator.alloc(u8, ptr_prefix);
+            // those must be 0
+            std.debug.assert((!bit1) and (!bit2));
 
-            // properly deserialize the slice
-            var label_idx: usize = 0;
-            while (label_idx < ptr_prefix) : (label_idx += 1) {
-                label[label_idx] = try inDeserial(deserializer, u8);
+            // the next <possible_length> bytes contain a full label.
+            //
+            // we use the label pool so we can give a bigger lifetime
+            var label = try ctx.newLabel(possible_length);
+
+            var index: usize = 0;
+            while (index < possible_length) : (index += 1) {
+                label[index] = try deserializer.deserialize(u8);
             }
 
-            return LabelComponent{ .Label = label };
+            return LabelComponent{ .Full = label };
         }
-
-        return null;
     }
 
     /// Deserializes a DNS Name
-    pub fn deserializeName(
+    fn readName(
         self: *Self,
-        deserial: *DNSDeserializer,
-    ) (Error || Allocator.Error)!Name {
+        deserializer: anytype,
+        ctx: *DeserializationContext,
+        name_buffer: [][]const u8,
+    ) !Name {
+        var buffer_index: usize = 0;
 
-        // Removing this causes the compiler to send a
-        // 'error: recursive function cannot be async'
-        if (std.io.mode == .evented) {
-            _ = @frame();
-        }
+        // RFC1035, 4.1.4 Message Compression:
+        // The compression scheme allows a domain name in a message to be
+        // represented as either:
+        //
+        //    - a sequence of labels ending in a zero octet
+        //    - a pointer
+        //    - a sequence of labels ending with a pointer
+        //
+        // ==
+        //
+        // All three of those must end in some way of
+        // 	name_buffer[buffer_index] = something;
+        // since thats where our result will go.
 
-        // allocate empty label slice
-        var deserializer = deserial;
-        var labels: [][]const u8 = try self.allocator.alloc([]u8, 0);
-        var labels_idx: usize = 0;
+        // keep attempting to get labels off the deserializer and
+        // filling the name_buffer.
+        //
+        // if it ends in 0, be done
+        // if its a pointer, follow pointer
+        // if it ends in a pointer, follow pointer
+        // else, fill label
 
         while (true) {
-            var label = try self.deserializeLabel(deserializer);
-
-            if (label) |denulled_label| {
-                labels = try self.allocator.realloc(labels, (labels_idx + 1));
-
-                switch (denulled_label) {
-                    .Pointer => |label_ptr| {
-                        if (labels_idx == 0) {
-                            return Name{ .labels = label_ptr };
-                        } else {
-                            // in here we have an existing label in the labels slice, e.g "leah",
-                            // and then label_ptr points to a [][]const u8, e.g
-                            // [][]const u8{"ns", "cloudflare", "com"}. we
-                            // need to copy that, as a suffix, to the existing
-                            // labels slice
-                            for (label_ptr) |label_ptr_label, idx| {
-                                labels[labels_idx] = label_ptr_label;
-                                labels_idx += 1;
-
-                                // reallocate to account for the next incoming label
-                                if (idx != label_ptr.len - 1) {
-                                    labels = try self.allocator.realloc(labels, (labels_idx + 1));
-                                }
-                            }
-
-                            return Name{ .labels = labels };
-                        }
-                    },
-                    .Label => |label_val| labels[labels_idx] = label_val,
-                }
-            } else {
-                break;
+            var component: LabelComponent = try self.readLabel(deserializer, ctx);
+            switch (component) {
+                .Full => |label| {
+                    name_buffer[buffer_index] = label;
+                    buffer_index += 1;
+                },
+                .Pointer => |ptr| {},
+                .Null => break,
             }
-
-            labels_idx += 1;
         }
 
-        return Name{ .labels = labels };
+        return Name{ .labels = name_buffer[0..(buffer_index - 1)] };
     }
 
     pub fn readInto(
         self: *Self,
         reader: anytype,
-        ctx: DeserializationContext,
+        ctx: *DeserializationContext,
     ) !void {
         const DeserializerType = std.io.Deserializer(.Big, .Bit, @TypeOf(reader));
-        var deserializer = try DeserializerType.init(reader);
+        var deserializer = DeserializerType.init(reader);
         self.header = try deserializer.deserialize(Header);
 
-        var questions = try std.ArrayList(Question).init(ctx.allocator);
+        var questions = std.ArrayList(Question).init(ctx.allocator);
         self.questions = questions.items;
 
         var i: usize = 0;
-        while (i < self.header.qdcount) {
+        while (i < self.header.question_length) {
             // question contains {name, qtype, qclass}
-            var name = try self.readName(deserializer, ctx);
+            var name_buffer = try ctx.allocator.alloc([]u8, 32);
+            try ctx.name_pool.append(name_buffer);
+
+            var name = try self.readName(&deserializer, ctx, name_buffer);
             var qtype = try deserializer.deserialize(u16);
             var qclass = try deserializer.deserialize(u16);
 
             var question = Question{
-                .qname = name,
-                .qtype = @intToEnum(Type, qtype),
-                .qclass = @intToEnum(Class, qclass),
+                .name = name,
+                .typ = @intToEnum(ResourceType, qtype),
+                .class = @intToEnum(ResourceClass, qclass),
             };
 
             try questions.append(question);
