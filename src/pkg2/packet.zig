@@ -394,8 +394,8 @@ pub const Packet = struct {
 
             var question = Question{
                 .name = name,
-                .typ = @intToEnum(ResourceType, qtype),
-                .class = @intToEnum(ResourceClass, qclass),
+                .typ = try std.meta.intToEnum(ResourceType, qtype),
+                .class = try std.meta.intToEnum(ResourceClass, qclass),
             };
 
             try questions.append(question);
