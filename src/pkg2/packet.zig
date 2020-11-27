@@ -380,7 +380,6 @@ pub const Packet = struct {
         self.header = try deserializer.deserialize(Header);
 
         var questions = std.ArrayList(Question).init(ctx.allocator);
-        self.questions = questions.items;
 
         var i: usize = 0;
         while (i < self.header.question_length) {
@@ -401,5 +400,7 @@ pub const Packet = struct {
             try questions.append(question);
             i += 1;
         }
+
+        self.questions = questions.items;
     }
 };
