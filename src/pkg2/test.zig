@@ -70,11 +70,10 @@ test "Packet serialize/deserialize" {
     }
 }
 
-fn decodeBase64(encoded: []const u8) ![]u8 {
-    var buf: [0x10000]u8 = undefined;
-    var decoded = buf[0..try std.base64.standard_decoder.calcSize(encoded)];
-    try std.base64.standard_decoder.decode(decoded, encoded);
-    return decoded;
+fn decodeBase64(encoded: []const u8, write_buffer: []u8) ![]const u8 {
+    const size = try std.base64.standard_decoder.calcSize(encoded);
+    try std.base64.standard_decoder.decode(write_buffer[0..size], encoded);
+    return write_buffer[0..size];
 }
 
 fn expectGoogleLabels(actual: [][]const u8) void {
@@ -84,26 +83,32 @@ fn expectGoogleLabels(actual: [][]const u8) void {
 }
 
 test "deserialization of original google.com/A" {
-    if (true) return error.SkipZigTest;
+    var allocator_instance = std.heap.GeneralPurposeAllocator(.{}){};
+    defer {
+        _ = allocator_instance.deinit();
+    }
+    const allocator = &allocator_instance.allocator;
 
-    var arena = std.heap.ArenaAllocator.init(std.heap.direct_allocator);
-    defer arena.deinit();
-    const allocator = &arena.allocator;
+    var write_buffer: [0x10000]u8 = undefined;
 
-    var decoded = try decodeBase64(TEST_PKT_QUERY[0..]);
-    var pkt = try deserialTest(allocator, decoded);
+    var decoded = try decodeBase64(TEST_PKT_QUERY, &write_buffer);
 
-    std.debug.assert(pkt.header.id == 5189);
-    std.debug.assert(pkt.header.qdcount == 1);
-    std.debug.assert(pkt.header.ancount == 0);
-    std.debug.assert(pkt.header.nscount == 0);
-    std.debug.assert(pkt.header.arcount == 0);
+    var deserializer_buffer: [1024]u8 = undefined;
+    var pkt = try deserialTest(decoded, &deserializer_buffer);
 
-    const question = pkt.questions.at(0);
+    std.testing.expectEqual(@as(u16, 5189), pkt.header.id);
+    std.testing.expectEqual(@as(u16, 1), pkt.header.question_length);
+    std.testing.expectEqual(@as(u16, 0), pkt.header.answer_length);
+    std.testing.expectEqual(@as(u16, 0), pkt.header.nameserver_length);
+    std.testing.expectEqual(@as(u16, 0), pkt.header.additional_length);
 
-    expectGoogleLabels(question.qname.labels);
-    std.testing.expectEqual(question.qtype, dns.Type.A);
-    std.testing.expectEqual(question.qclass, dns.Class.IN);
+    std.testing.expectEqual(@as(usize, 1), pkt.questions.len);
+
+    const question = pkt.questions[0];
+
+    expectGoogleLabels(question.name.labels);
+    std.testing.expectEqual(question.typ, dns.ResourceType.A);
+    std.testing.expectEqual(question.class, dns.ResourceClass.IN);
 }
 
 test "deserialization of reply google.com/A" {
