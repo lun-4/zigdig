@@ -157,7 +157,7 @@ pub const DeserializationContext = struct {
 
 const LabelComponent = union(enum) {
     Full: []const u8,
-    Pointer: []const u8,
+    Pointer: Name,
     Null: void,
 };
 
@@ -266,6 +266,77 @@ pub const Packet = struct {
         }
     }
 
+    fn unfoldPointer(
+        self: *Self,
+        first_offset_component: u8,
+        deserializer: anytype,
+    ) !Name {
+        // we need to read another u8 and merge both that and first_offset_component
+        // into a u16 we can use as an offset in the entire packet, etc.
+
+        // the final offset is actually 14 bits, the first two are identification
+        // of the offset itself.
+        const second_offset_component = try deserializer.deserialize(u8);
+
+        // merge them together
+        var offset: u16 = (first_offset_component << 7) | second_offset_component;
+
+        // set first two bits of ptr_offset to zero as they're the
+        // pointer prefix bits (which are always 1, which brings problems)
+        offset &= ~@as(u16, 1 << 15);
+        offset &= ~@as(u16, 1 << 14);
+
+        // RFC1035 says:
+        //
+        // The OFFSET field specifies an offset from
+        // the start of the message (i.e., the first octet of the ID field in the
+        // domain header).  A zero offset specifies the first byte of the ID field,
+        // etc.
+
+        // this mechanism requires us to hold the entire packet in memory
+        //
+        // one guarantee we have is that pointers can't reference packet
+        // offsets in the past (oh than god that makes *some* sense!)
+
+        // to make this work with nicer safety guarantees, we slice the
+        // packet bytes we know of, starting on that offset, and ending in the
+        // first zero octet we find.
+        //
+        // if offset is X,
+        // then our slice starts at X and ends at X+n, as follows:
+        //
+        // ... [      0] ...
+        //     |      |
+        //     X      X+n
+        //
+        // we just need to calculate n by using indexOf to find the null octet
+        //
+        // TODO a way to hold the memory we deserialized, maybe a custom
+        // wrapper Reader that allocates and stores the bytes it read? i think
+        // we already have that kind of thing in std, but i need more time
+        var offset_size_opt = std.mem.indexOf(u8, self.raw_bytes[offset..], "\x00");
+        if (offset_size_opt == null) return error.ParseFail;
+        var offset_size = offset_size_opt.?;
+
+        // from our slice, we need to read a name from it. we do it via
+        // creating a FixedBufferStream, extracting a reader from it, creating
+        // a deserializer, and feeding that to readName.
+        const label_data = self.raw_bytes[offset .. offset + (offset_size + 1)];
+
+        var stream = std.io.FixedBufferStream([]const u8){
+            .buffer = start_slice,
+            .pos = 0,
+        };
+        const InnerDeserializer = std.io.Deserializer(.Big, .Bit, stream.Reader);
+
+        var new_deserializer = InnerDeserializer.init(stream.reader());
+
+        // TODO: no name buffer available here. i think we can create a
+        // NameDeserializationContext which holds both the name buffer AND
+        // the index so we could keep appending new labels to it
+        return self.readName(new_deserializer, ctx, TODO_NAME_BUFFER_HERE_HOW);
+    }
+
     /// Deserialize a LabelComponent, which can be:
     ///  - a pointer
     ///  - a label
@@ -303,9 +374,8 @@ pub const Packet = struct {
 
         if (bit1 and bit2) {
             // its a pointer!
-            unreachable;
-            // var labels = try self.deserializePointer(ptr_prefix, deserializer);
-            // return LabelComponent{ .Pointer = labels };
+            var name = try self.unfoldPointer(possible_length, deserializer);
+            return LabelComponent{ .Pointer = name };
         } else {
             // those must be 0
             std.debug.assert((!bit1) and (!bit2));
