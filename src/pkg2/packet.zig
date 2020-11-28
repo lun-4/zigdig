@@ -115,6 +115,7 @@ pub const Resource = struct {
     }
 };
 
+const ByteList = std.ArrayList(u8);
 const StringList = std.ArrayList([]u8);
 const ManyStringList = std.ArrayList([][]u8);
 
@@ -122,6 +123,7 @@ pub const DeserializationContext = struct {
     allocator: *std.mem.Allocator,
     label_pool: StringList,
     name_pool: ManyStringList,
+    packet_list: ?ByteList = null,
 
     const Self = @This();
 
@@ -160,6 +162,43 @@ const LabelComponent = union(enum) {
     Pointer: Name,
     Null: void,
 };
+
+fn WrapperReader(comptime ReaderType: anytype) type {
+    return struct {
+        underlying_reader: ReaderType,
+        allocator: *std.mem.Allocator,
+        data_list: ByteList,
+
+        const Self = @This();
+
+        pub fn init(underlying_reader: ReaderType, allocator: *std.mem.Allocator) Self {
+            return .{
+                .underlying_reader = underlying_reader,
+                .allocator = allocator,
+                .data_list = ByteList.init(allocator),
+            };
+        }
+
+        pub fn deinit(self: *Self) void {
+            self.list.deinit();
+        }
+
+        pub fn read(self: *Self, buffer: []u8) !usize {
+            const bytes_read = try self.underlying_reader.read(buffer);
+            const bytes = buffer[0..bytes_read];
+            try self.data_list.writer().writeAll(bytes);
+            return bytes_read;
+        }
+
+        pub const Error = ReaderType.Error || error{OutOfMemory};
+
+        pub const Reader = std.io.Reader(*Self, Error, read);
+
+        pub fn reader(self: *Self) Reader {
+            return Reader{ .context = self };
+        }
+    };
+}
 
 pub const Packet = struct {
     header: Header,
@@ -217,59 +256,14 @@ pub const Packet = struct {
         //try self.serializeRList(serializer, self.additional);
     }
 
-    fn deserializePointer(
-        self: *Self,
-        ptr_offset_1: u8,
-        deserializer: anytype,
-    ) ![][]const u8 {
-        // we need to read another u8 and merge both ptr_prefix_1 and the
-        // u8 we read into an u16
-
-        // the final offset is u14, but we keep it as u16 to prevent having
-        // to do too many complicated things in regards to deserializer state.
-        const ptr_offset_2 = try inDeserial(deserializer, u8);
-
-        // merge them together
-        var ptr_offset: u16 = (ptr_offset_1 << 7) | ptr_offset_2;
-
-        // set first two bits of ptr_offset to zero as they're the
-        // pointer prefix bits (which are always 1, which brings problems)
-        ptr_offset &= ~@as(u16, 1 << 15);
-        ptr_offset &= ~@as(u16, 1 << 14);
-
-        // we need to make a proper [][]const u8 which means
-        // re-deserializing labels but using start_slice instead
-        var offset_size_opt = std.mem.indexOf(u8, self.raw_bytes[ptr_offset..], "\x00");
-
-        if (offset_size_opt) |offset_size| {
-            var start_slice = self.raw_bytes[ptr_offset .. ptr_offset + (offset_size + 1)];
-
-            var in = FixedStream{ .buffer = start_slice, .pos = 0 };
-            var new_deserializer = DNSDeserializer.init(in.reader());
-
-            // the old (nonfunctional approach) a simpleDeserializeName
-            // to counteract the problems with just slapping deserializeName
-            // in and doing recursion. however that's problematic as pointers
-            // could be pointing to other pointers.
-
-            // because of https://github.com/ziglang/zig/issues/1006
-            // and the disallowance of recursive async fns, we heap-allocate this call
-
-            var frame = try self.allocator.create(@Frame(Packet.deserializeName));
-            defer self.allocator.destroy(frame);
-            frame.* = async self.deserializeName(&new_deserializer);
-            var name = try await frame;
-
-            return name.labels;
-        } else {
-            return Error.ParseFail;
-        }
-    }
-
     fn unfoldPointer(
         self: *Self,
         first_offset_component: u8,
         deserializer: anytype,
+        ctx: *DeserializationContext,
+        /// Buffer that holds the memory for the dns name
+        name_buffer: [][]const u8,
+        name_index: usize,
     ) !Name {
         // we need to read another u8 and merge both that and first_offset_component
         // into a u16 we can use as an offset in the entire packet, etc.
@@ -314,19 +308,21 @@ pub const Packet = struct {
         // TODO a way to hold the memory we deserialized, maybe a custom
         // wrapper Reader that allocates and stores the bytes it read? i think
         // we already have that kind of thing in std, but i need more time
-        var offset_size_opt = std.mem.indexOf(u8, self.raw_bytes[offset..], "\x00");
+        var offset_size_opt = std.mem.indexOf(u8, ctx.packet_list.?.items[offset..], "\x00");
         if (offset_size_opt == null) return error.ParseFail;
         var offset_size = offset_size_opt.?;
 
         // from our slice, we need to read a name from it. we do it via
         // creating a FixedBufferStream, extracting a reader from it, creating
         // a deserializer, and feeding that to readName.
-        const label_data = self.raw_bytes[offset .. offset + (offset_size + 1)];
+        const label_data = ctx.packet_list.?.items[offset .. offset + (offset_size + 1)];
 
-        var stream = std.io.FixedBufferStream([]const u8){
-            .buffer = start_slice,
+        const T = std.io.FixedBufferStream([]const u8);
+        var stream = T{
+            .buffer = label_data,
             .pos = 0,
         };
+
         const InnerDeserializer = std.io.Deserializer(.Big, .Bit, stream.Reader);
 
         var new_deserializer = InnerDeserializer.init(stream.reader());
@@ -334,7 +330,7 @@ pub const Packet = struct {
         // TODO: no name buffer available here. i think we can create a
         // NameDeserializationContext which holds both the name buffer AND
         // the index so we could keep appending new labels to it
-        return self.readName(new_deserializer, ctx, TODO_NAME_BUFFER_HERE_HOW);
+        return self.readName(new_deserializer, ctx, name_buffer, name_index);
     }
 
     /// Deserialize a LabelComponent, which can be:
@@ -345,6 +341,8 @@ pub const Packet = struct {
         self: *Self,
         deserializer: anytype,
         ctx: *DeserializationContext,
+        name_buffer: [][]const u8,
+        name_index: usize,
     ) !LabelComponent {
         // pointers, in the binary representation of a byte, are as follows
         //  1 1 B B B B B B | B B B B B B B B
@@ -374,7 +372,13 @@ pub const Packet = struct {
 
         if (bit1 and bit2) {
             // its a pointer!
-            var name = try self.unfoldPointer(possible_length, deserializer);
+            var name = try self.unfoldPointer(
+                possible_length,
+                deserializer,
+                ctx,
+                name_buffer,
+                name_index,
+            );
             return LabelComponent{ .Pointer = name };
         } else {
             // those must be 0
@@ -400,8 +404,9 @@ pub const Packet = struct {
         deserializer: anytype,
         ctx: *DeserializationContext,
         name_buffer: [][]const u8,
+        name_index: ?usize,
     ) !Name {
-        var buffer_index: usize = 0;
+        var buffer_index: usize = name_index orelse 0;
 
         // RFC1035, 4.1.4 Message Compression:
         // The compression scheme allows a domain name in a message to be
@@ -426,7 +431,7 @@ pub const Packet = struct {
         // else, fill label
 
         while (true) {
-            var component: LabelComponent = try self.readLabel(deserializer, ctx);
+            var component: LabelComponent = try self.readLabel(deserializer, ctx, name_buffer, buffer_index);
             switch (component) {
                 .Full => |label| {
                     name_buffer[buffer_index] = label;
@@ -442,9 +447,14 @@ pub const Packet = struct {
 
     pub fn readInto(
         self: *Self,
-        reader: anytype,
+        upstream_reader: anytype,
         ctx: *DeserializationContext,
     ) !void {
+        const WrapperReaderType = WrapperReader(@TypeOf(upstream_reader));
+        var wrapper_reader = WrapperReaderType.init(upstream_reader, ctx.allocator);
+        ctx.packet_list = wrapper_reader.data_list;
+        var reader = wrapper_reader.reader();
+
         const DeserializerType = std.io.Deserializer(.Big, .Bit, @TypeOf(reader));
         var deserializer = DeserializerType.init(reader);
         self.header = try deserializer.deserialize(Header);
@@ -453,11 +463,10 @@ pub const Packet = struct {
 
         var i: usize = 0;
         while (i < self.header.question_length) {
-            // question contains {name, qtype, qclass}
             var name_buffer = try ctx.allocator.alloc([]u8, 32);
             try ctx.name_pool.append(name_buffer);
 
-            var name = try self.readName(&deserializer, ctx, name_buffer);
+            var name = try self.readName(&deserializer, ctx, name_buffer, null);
             var qtype = try deserializer.deserialize(u16);
             var qclass = try deserializer.deserialize(u16);
 
