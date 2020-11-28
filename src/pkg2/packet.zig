@@ -240,11 +240,17 @@ pub const Packet = struct {
         return @sizeOf(Header) + self.sliceSizes();
     }
 
+    fn serializeResourceList(self: Self, serializer: anytype, resource_list: []Resource) !void {
+        for (resource_list) |resource| {
+            try serializer.serialize(resource);
+        }
+    }
+
     pub fn serialize(self: Self, serializer: anytype) !void {
         std.debug.assert(self.header.question_length == self.questions.len);
-        // std.debug.assert(self.header.answer_length == self.answers.len);
-        // std.debug.assert(self.header.nameserver_length == self.authority.len);
-        // std.debug.assert(self.header.additional_length == self.additional.len);
+        std.debug.assert(self.header.answer_length == self.answers.len);
+        std.debug.assert(self.header.nameserver_length == self.nameservers.len);
+        std.debug.assert(self.header.additional_length == self.additionals.len);
 
         try serializer.serialize(self.header);
 
@@ -254,9 +260,9 @@ pub const Packet = struct {
             try serializer.serialize(question.class);
         }
 
-        //try self.serializeRList(serializer, self.answers);
-        //try self.serializeRList(serializer, self.authority);
-        //try self.serializeRList(serializer, self.additional);
+        try self.serializeResourceList(serializer, self.answers);
+        try self.serializeResourceList(serializer, self.nameservers);
+        try self.serializeResourceList(serializer, self.additionals);
     }
 
     fn unfoldPointer(
