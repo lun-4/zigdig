@@ -237,7 +237,7 @@ pub fn main() !void {
     std.debug.warn("selected {}\n", .{conn.address});
     defer conn.file.close();
 
-    // try dns.helpers.sendPacket(sock, packet);
+    try dns.helpers.sendPacket(conn, packet);
 
     // var buffer: [1024]u8 = undefined;
     // const reply = try dns.helpers.recvPacket(sock, &buffer);

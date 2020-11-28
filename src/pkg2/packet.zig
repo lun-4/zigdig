@@ -212,7 +212,7 @@ pub const Packet = struct {
     fn sliceSizes(self: Self) usize {
         var pkt_size: usize = 0;
 
-        for (self.questions.items) |question| {
+        for (self.questions) |question| {
             pkt_size += question.name.size();
 
             // add both type and class (both u16's)
@@ -220,17 +220,17 @@ pub const Packet = struct {
             pkt_size += @sizeOf(u16);
         }
 
-        // for (self.answers.items) |resource| {
-        //     pkt_size += resource.size();
-        // }
+        for (self.answers) |resource| {
+            pkt_size += resource.size();
+        }
 
-        // for (self.authority.items) |resource| {
-        //     pkt_size += resource.size();
-        // }
+        for (self.nameservers) |resource| {
+            pkt_size += resource.size();
+        }
 
-        // for (self.additional.items) |resource| {
-        //     pkt_size += resource.size();
-        // }
+        for (self.additionals) |resource| {
+            pkt_size += resource.size();
+        }
 
         return pkt_size;
     }

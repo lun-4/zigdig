@@ -60,9 +60,9 @@ pub fn sendPacket(conn: std.net.StreamServer.Connection, packet: root.Packet) !v
     // this is a limitation of std.net.
     var buffer: [1024]u8 = undefined;
 
-    const typ = io.FixedBufferStream([]u8);
-    var stream = typ{ .buffer = buffer, .pos = 0 };
-    var serializer = io.Serializer(.Big, .Bit, typ.Writer).init(stream.writer());
+    const typ = std.io.FixedBufferStream([]u8);
+    var stream = typ{ .buffer = &buffer, .pos = 0 };
+    var serializer = std.io.Serializer(.Big, .Bit, typ.Writer).init(stream.writer());
 
     try serializer.serialize(packet);
     try serializer.flush();
