@@ -115,41 +115,46 @@ test "deserialization of original google.com/A" {
 }
 
 test "deserialization of reply google.com/A" {
-    if (true) return error.SkipZigTest;
+    var allocator_instance = std.heap.GeneralPurposeAllocator(.{}){};
+    defer {
+        _ = allocator_instance.deinit();
+    }
+    const allocator = &allocator_instance.allocator;
 
-    var arena = std.heap.ArenaAllocator.init(std.heap.direct_allocator);
-    defer arena.deinit();
-    const allocator = &arena.allocator;
+    var encode_buffer: [0x10000]u8 = undefined;
+    var decoded = try decodeBase64(TEST_PKT_RESPONSE, &encode_buffer);
 
-    var decoded = try decodeBase64(TEST_PKT_RESPONSE[0..]);
-    var pkt = try deserialTest(allocator, decoded);
+    var workmem: [5000]u8 = undefined;
+    var pkt = try deserialTest(decoded, &workmem);
 
-    std.debug.assert(pkt.header.qdcount == 1);
-    std.debug.assert(pkt.header.ancount == 1);
-    std.debug.assert(pkt.header.nscount == 0);
-    std.debug.assert(pkt.header.arcount == 0);
+    std.debug.assert(pkt.header.question_length == 1);
+    std.debug.assert(pkt.header.answer_length == 1);
+    std.debug.assert(pkt.header.nameserver_length == 0);
+    std.debug.assert(pkt.header.additional_length == 0);
 
-    var question = pkt.questions.at(0);
+    var question = pkt.questions[0];
 
-    expectGoogleLabels(question.qname.labels);
-    testing.expectEqual(dns.Type.A, question.qtype);
-    testing.expectEqual(dns.Class.IN, question.qclass);
+    expectGoogleLabels(question.name.labels);
+    testing.expectEqual(dns.ResourceType.A, question.typ);
+    testing.expectEqual(dns.ResourceClass.IN, question.class);
 
-    var answer = pkt.answers.at(0);
+    var answer = pkt.answers[0];
 
     expectGoogleLabels(answer.name.labels);
-    testing.expectEqual(dns.Type.A, answer.rr_type);
-    testing.expectEqual(dns.Class.IN, answer.class);
+    testing.expectEqual(dns.ResourceType.A, answer.typ);
+    testing.expectEqual(dns.ResourceClass.IN, answer.class);
     testing.expectEqual(@as(i32, 300), answer.ttl);
 
-    var answer_rdata = try rdata.deserializeRData(pkt, answer);
-    testing.expectEqual(dns.Type.A, @as(dns.Type, answer_rdata));
+    // TODO RDATA
 
-    const addr = @ptrCast(*[4]u8, &answer_rdata.A.in.addr).*;
-    testing.expectEqual(@as(u8, 216), addr[0]);
-    testing.expectEqual(@as(u8, 58), addr[1]);
-    testing.expectEqual(@as(u8, 202), addr[2]);
-    testing.expectEqual(@as(u8, 142), addr[3]);
+    // var answer_rdata = try rdata.deserializeRData(pkt, answer);
+    // testing.expectEqual(dns.Type.A, @as(dns.Type, answer_rdata));
+
+    // const addr = @ptrCast(*[4]u8, &answer_rdata.A.in.addr).*;
+    // testing.expectEqual(@as(u8, 216), addr[0]);
+    // testing.expectEqual(@as(u8, 58), addr[1]);
+    // testing.expectEqual(@as(u8, 202), addr[2]);
+    // testing.expectEqual(@as(u8, 142), addr[3]);
 }
 
 fn encodeBase64(buffer: []u8, out: []const u8) []const u8 {
