@@ -264,7 +264,7 @@ pub const Packet = struct {
         /// Buffer that holds the memory for the dns name
         name_buffer: [][]const u8,
         name_index: usize,
-    ) !Name {
+    ) anyerror!Name {
         // we need to read another u8 and merge both that and first_offset_component
         // into a u16 we can use as an offset in the entire packet, etc.
 
@@ -318,19 +318,19 @@ pub const Packet = struct {
         const label_data = ctx.packet_list.?.items[offset .. offset + (offset_size + 1)];
 
         const T = std.io.FixedBufferStream([]const u8);
+        const InnerDeserializer = std.io.Deserializer(.Big, .Bit, T.Reader);
+
         var stream = T{
             .buffer = label_data,
             .pos = 0,
         };
-
-        const InnerDeserializer = std.io.Deserializer(.Big, .Bit, stream.Reader);
 
         var new_deserializer = InnerDeserializer.init(stream.reader());
 
         // TODO: no name buffer available here. i think we can create a
         // NameDeserializationContext which holds both the name buffer AND
         // the index so we could keep appending new labels to it
-        return self.readName(new_deserializer, ctx, name_buffer, name_index);
+        return self.readName(&new_deserializer, ctx, name_buffer, name_index);
     }
 
     /// Deserialize a LabelComponent, which can be:
