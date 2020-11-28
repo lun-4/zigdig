@@ -58,13 +58,18 @@ pub const Name = struct {
     }
 
     /// Format the given DNS name.
-    pub fn format(self: @This(), comptime f: []const u8, options: fmt.FormatOptions, writer: anytype) !void {
+    pub fn format(
+        self: @This(),
+        comptime f: []const u8,
+        options: std.fmt.FormatOptions,
+        writer: anytype,
+    ) !void {
         if (f.len != 0) {
             @compileError("Unknown format character: '" ++ f ++ "'");
         }
 
         for (self.labels) |label| {
-            try fmt.format(writer, "{}.", .{label});
+            try std.fmt.format(writer, "{}.", .{label});
         }
     }
 };
