@@ -151,20 +151,17 @@ pub const ResourceData = union(Type) {
     }
 
     /// Deserialize a given opaque resource data.
-    pub fn deserializeResourceData(
+    pub fn fromOpaque(
         allocator: *std.mem.Allocator,
+        typ: dns.ResourceType,
         opaque_resource_data: []const u8,
     ) !ResourceData {
-        var in = dns.FixedStream{ .buffer = resource.opaque_rdata, .pos = 0 };
-        var deserializer = dns.DNSDeserializer.init(in.reader());
-
         const BufferT = std.io.FixedBufferStream([]const u8);
         var stream = BufferT{ .buffer = opaque_resource_data, .pos = 0 };
         const DeserializerT = std.io.Deserializer(.Big, .Bit, BufferT.Reader);
+        var deserializer = DeserializerT.init(stream.reader());
 
-        var deserializer = DeserializerT.init(stream);
-
-        var rdata = switch (resource.rr_type) {
+        var rdata = switch (typ) {
             .A => blk: {
                 var ip4addr: [4]u8 = undefined;
                 for (ip4addr) |_, i| {
@@ -187,56 +184,56 @@ pub const ResourceData = union(Type) {
                 };
             },
 
-            .NS => ResourceData{ .NS = try pkt.deserializeName(&deserializer) },
-            .CNAME => ResourceData{ .CNAME = try pkt.deserializeName(&deserializer) },
-            .PTR => ResourceData{ .PTR = try pkt.deserializeName(&deserializer) },
-            .MX => blk: {
-                break :blk ResourceData{
-                    .MX = MXData{
-                        .preference = try deserializer.deserialize(u16),
-                        .exchange = try pkt.deserializeName(&deserializer),
-                    },
-                };
-            },
-            .MD => ResourceData{ .MD = try pkt.deserializeName(&deserializer) },
-            .MF => ResourceData{ .MF = try pkt.deserializeName(&deserializer) },
+            // .NS => ResourceData{ .NS = try pkt.deserializeName(&deserializer) },
+            // .CNAME => ResourceData{ .CNAME = try pkt.deserializeName(&deserializer) },
+            // .PTR => ResourceData{ .PTR = try pkt.deserializeName(&deserializer) },
+            // .MX => blk: {
+            //     break :blk ResourceData{
+            //         .MX = MXData{
+            //             .preference = try deserializer.deserialize(u16),
+            //             .exchange = try pkt.deserializeName(&deserializer),
+            //         },
+            //     };
+            // },
+            // .MD => ResourceData{ .MD = try pkt.deserializeName(&deserializer) },
+            // .MF => ResourceData{ .MF = try pkt.deserializeName(&deserializer) },
 
-            .SOA => blk: {
-                var mname = try pkt.deserializeName(&deserializer);
-                var rname = try pkt.deserializeName(&deserializer);
-                var serial = try deserializer.deserialize(u32);
-                var refresh = try deserializer.deserialize(u32);
-                var retry = try deserializer.deserialize(u32);
-                var expire = try deserializer.deserialize(u32);
-                var minimum = try deserializer.deserialize(u32);
+            // .SOA => blk: {
+            //     var mname = try pkt.deserializeName(&deserializer);
+            //     var rname = try pkt.deserializeName(&deserializer);
+            //     var serial = try deserializer.deserialize(u32);
+            //     var refresh = try deserializer.deserialize(u32);
+            //     var retry = try deserializer.deserialize(u32);
+            //     var expire = try deserializer.deserialize(u32);
+            //     var minimum = try deserializer.deserialize(u32);
 
-                break :blk ResourceData{
-                    .SOA = SOAData{
-                        .mname = mname,
-                        .rname = rname,
-                        .serial = serial,
-                        .refresh = refresh,
-                        .retry = retry,
-                        .expire = expire,
-                        .minimum = minimum,
-                    },
-                };
-            },
-            .SRV => blk: {
-                const priority = try deserializer.deserialize(u16);
-                const weight = try deserializer.deserialize(u16);
-                const port = try deserializer.deserialize(u16);
-                var target = try pkt.deserializeName(&deserializer);
+            //     break :blk ResourceData{
+            //         .SOA = SOAData{
+            //             .mname = mname,
+            //             .rname = rname,
+            //             .serial = serial,
+            //             .refresh = refresh,
+            //             .retry = retry,
+            //             .expire = expire,
+            //             .minimum = minimum,
+            //         },
+            //     };
+            // },
+            // .SRV => blk: {
+            //     const priority = try deserializer.deserialize(u16);
+            //     const weight = try deserializer.deserialize(u16);
+            //     const port = try deserializer.deserialize(u16);
+            //     var target = try pkt.deserializeName(&deserializer);
 
-                break :blk ResourceData{
-                    .SRV = .{
-                        .priority = priority,
-                        .weight = weight,
-                        .port = port,
-                        .target = target,
-                    },
-                };
-            },
+            //     break :blk ResourceData{
+            //         .SRV = .{
+            //             .priority = priority,
+            //             .weight = weight,
+            //             .port = port,
+            //             .target = target,
+            //         },
+            //     };
+            // },
 
             else => {
                 return error.InvalidRData;

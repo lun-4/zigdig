@@ -6,7 +6,6 @@ const OutError = io.SliceOutStream.Error;
 const InError = io.SliceInStream.Error;
 
 const dns = @import("./dns.zig");
-const rdata = dns.rdata;
 const Packet = dns.Packet;
 
 test "convert domain string to dns name" {
@@ -146,10 +145,10 @@ test "deserialization of reply google.com/A" {
     testing.expectEqual(dns.ResourceClass.IN, answer.class);
     testing.expectEqual(@as(i32, 300), answer.ttl);
 
-    var answer_rdata = try rdata.deserializeRData(pkt, answer);
-    testing.expectEqual(dns.Type.A, @as(dns.Type, answer_rdata));
+    const resource_data = try dns.ResourceData.fromOpaque(allocator, .A, answer.opaque_rdata);
+    testing.expectEqual(dns.ResourceType.A, @as(dns.ResourceType, resource_data));
 
-    const addr = @ptrCast(*[4]u8, &answer_rdata.A.in.addr).*;
+    const addr = @ptrCast(*const [4]u8, &resource_data.A.in.sa.addr).*;
     testing.expectEqual(@as(u8, 216), addr[0]);
     testing.expectEqual(@as(u8, 58), addr[1]);
     testing.expectEqual(@as(u8, 202), addr[2]);
