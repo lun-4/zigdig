@@ -1,3 +1,4 @@
+const std = @import("std");
 pub const helpers = @import("./helpers.zig");
 
 pub const ResourceType = @import("./types.zig").ResourceType;
@@ -10,3 +11,8 @@ pub const Question = packet.Question;
 pub const Packet = packet.Packet;
 pub const Resource = packet.Resource;
 pub const DeserializationContext = packet.DeserializationContext;
+
+test "" {
+    std.testing.refAllDecls(@import("./test.zig"));
+    std.testing.refAllDecls(@This());
+}

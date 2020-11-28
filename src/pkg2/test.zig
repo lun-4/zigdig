@@ -2,8 +2,6 @@ const std = @import("std");
 const testing = std.testing;
 const Allocator = std.mem.Allocator;
 const io = std.io;
-const OutError = io.SliceOutStream.Error;
-const InError = io.SliceInStream.Error;
 
 const dns = @import("./dns.zig");
 const Packet = dns.Packet;
@@ -198,7 +196,7 @@ fn serialTest(packet: Packet, write_buffer: []u8) ![]u8 {
     const T = std.io.FixedBufferStream([]u8);
 
     var buffer = T{ .buffer = write_buffer, .pos = 0 };
-    var serializer = io.Serializer(.Big, .Bit, T.Writer).init(buffer.writer());
+    var serializer = std.io.Serializer(.Big, .Bit, T.Writer).init(buffer.writer());
 
     try serializer.serialize(packet);
     try serializer.flush();
