@@ -203,6 +203,9 @@ fn WrapperReader(comptime ReaderType: anytype) type {
 pub const Packet = struct {
     header: Header,
     questions: []Question,
+    answers: []Resource,
+    nameservers: []Resource,
+    additionals: []Resource,
 
     const Self = @This();
 
@@ -445,6 +448,64 @@ pub const Packet = struct {
         return Name{ .labels = name_buffer[0..(buffer_index - 1)] };
     }
 
+    /// (almost) Deserialize an RDATA section. This only deserializes to a slice of u8.
+    /// Parsing of RDATA sections are in their own dns.rdata module.
+    fn deserializeRData(
+        self: *Self,
+        deserializer: anytype,
+        ctx: *DeserializationContext,
+    ) ![]const u8 {
+        var rdata_length = try deserializer.deserialize(u16);
+        var opaque_rdata = try ctx.allocator.alloc(u8, rdata_length);
+
+        // TODO create dedicated pool for this?
+        try ctx.label_pool.append(opaque_rdata);
+
+        var i: u16 = 0;
+        while (i < rdata_length) : (i += 1) {
+            opaque_rdata[i] = try deserializer.deserialize(u8);
+        }
+
+        return opaque_rdata;
+    }
+
+    fn deserializeResourceList(
+        self: *Self,
+        deserializer: anytype,
+        ctx: *DeserializationContext,
+        length: usize,
+        resource_list: *[]Resource,
+    ) !void {
+        var list = std.ArrayList(Resource).init(ctx.allocator);
+
+        var i: usize = 0;
+        while (i < length) : (i += 1) {
+            // TODO name buffer stuff
+            var name_buffer = try ctx.allocator.alloc([]u8, 32);
+            try ctx.name_pool.append(name_buffer);
+
+            var name = try self.readName(deserializer, ctx, name_buffer, null);
+            var typ = try deserializer.deserialize(u16);
+            var class = try deserializer.deserialize(u16);
+            var ttl = try deserializer.deserialize(i32);
+
+            // rdlength and rdata are under deserializeRData
+            var opaque_rdata = try self.deserializeRData(deserializer, ctx);
+
+            var resource = Resource{
+                .name = name,
+                .typ = try std.meta.intToEnum(ResourceType, typ),
+                .class = try std.meta.intToEnum(ResourceClass, class),
+                .ttl = ttl,
+                .opaque_rdata = opaque_rdata,
+            };
+
+            try list.append(resource);
+        }
+
+        resource_list.* = list.items;
+    }
+
     pub fn readInto(
         self: *Self,
         upstream_reader: anytype,
@@ -481,5 +542,9 @@ pub const Packet = struct {
         }
 
         self.questions = questions.items;
+
+        try self.deserializeResourceList(&deserializer, ctx, self.header.answer_length, &self.answers);
+        try self.deserializeResourceList(&deserializer, ctx, self.header.nameserver_length, &self.nameservers);
+        try self.deserializeResourceList(&deserializer, ctx, self.header.additional_length, &self.additionals);
     }
 };

@@ -47,6 +47,9 @@ test "Packet serialize/deserialize" {
     var packet = dns.Packet{
         .header = .{ .id = random_id },
         .questions = &[_]dns.Question{},
+        .answers = &[_]dns.Resource{},
+        .nameservers = &[_]dns.Resource{},
+        .additionals = &[_]dns.Resource{},
     };
 
     // then we'll serialize it under a buffer on the stack,
@@ -178,6 +181,9 @@ test "serialization of google.com/A (question)" {
             .typ = .A,
             .class = .IN,
         }},
+        .answers = &[_]dns.Resource{},
+        .nameservers = &[_]dns.Resource{},
+        .additionals = &[_]dns.Resource{},
     };
 
     var encode_buffer: [256]u8 = undefined;
@@ -204,7 +210,13 @@ fn deserialTest(buf: []const u8, work_memory: []u8) !Packet {
     var fba = std.heap.FixedBufferAllocator.init(work_memory);
     var ctx = dns.DeserializationContext.init(&fba.allocator);
 
-    var pkt = dns.Packet{ .header = .{}, .questions = &[_]dns.Question{} };
+    var pkt = dns.Packet{
+        .header = .{},
+        .questions = &[_]dns.Question{},
+        .answers = &[_]dns.Resource{},
+        .nameservers = &[_]dns.Resource{},
+        .additionals = &[_]dns.Resource{},
+    };
     try pkt.readInto(stream.reader(), &ctx);
 
     return pkt;
