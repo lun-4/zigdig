@@ -45,6 +45,8 @@ pub const Name = struct {
     }
 
     pub fn serialize(self: @This(), serializer: anytype) !void {
+        std.debug.warn("{}\n", .{self.labels.len});
+
         for (self.labels) |label| {
             std.debug.assert(label.len < 255);
             try serializer.serialize(@intCast(u8, label.len));

@@ -212,7 +212,7 @@ pub fn main() !void {
 
     _ = args_it.skip();
 
-    const name = (args_it.nextPosix() orelse {
+    const name_string = (args_it.nextPosix() orelse {
         std.debug.warn("no name provided\n", .{});
         return error.InvalidArgs;
     });
@@ -230,8 +230,14 @@ pub fn main() !void {
     };
 
     var name_buffer: [32][]const u8 = undefined;
-    const packet = try dns.helpers.createRequestPacket(name, &name_buffer, qtype);
+    const name = try dns.Name.fromString(name_string, &name_buffer);
+
+    const packet = try dns.helpers.createRequestPacket(name, qtype);
     std.debug.warn("{}\n", .{packet});
+    std.debug.warn("{}\n", .{packet.questions[0]});
+    std.debug.warn("name: {}\n", .{packet.questions[0].name});
+    std.debug.warn("name: {}\n", .{packet.questions[0].name.labels.ptr});
+    std.debug.warn("name: {}\n", .{packet.questions[0].name.labels.len});
 
     const conn = try dns.helpers.openSocketAnyResolver();
     std.debug.warn("selected {}\n", .{conn.address});

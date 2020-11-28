@@ -6,12 +6,9 @@ const resolvconf = @import("./resolvconf.zig");
 /// Create a DNS request packet.
 /// Receives the full DNS name to be resolved, "google.com" (without)
 pub fn createRequestPacket(
-    name_string: []const u8,
-    name_buffer: [][]const u8,
+    name: root.Name,
     resource_type: root.ResourceType,
 ) !root.Packet {
-    const name = try root.Name.fromString(name_string, name_buffer);
-
     const seed = @truncate(u64, @bitCast(u128, std.time.nanoTimestamp()));
     var r = std.rand.DefaultPrng.init(seed);
 
@@ -54,6 +51,11 @@ pub fn openSocketAnyResolver() !std.net.StreamServer.Connection {
 
 /// Send a DNS packet to socket.
 pub fn sendPacket(conn: std.net.StreamServer.Connection, packet: root.Packet) !void {
+    std.debug.warn("{}\n", .{packet});
+    std.debug.warn("name: {}\n", .{packet.questions[0].name.labels.ptr});
+    std.debug.warn("name: {}\n", .{packet.questions[0].name.labels.len});
+    std.debug.warn("{}\n", .{packet.questions[0]});
+
     // we hold this buffer because File won't use sendto()
     // and we need sendto() for UDP sockets. (makes sense)
     //
