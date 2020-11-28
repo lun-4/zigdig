@@ -233,8 +233,9 @@ pub fn main() !void {
     const packet = try dns.helpers.createRequestPacket(name, &name_buffer, qtype);
     std.debug.warn("{}\n", .{packet});
 
-    const sock = try dns.helpers.openSocketAnyResolver();
-    defer sock.close();
+    const conn = try dns.helpers.openSocketAnyResolver();
+    std.debug.warn("selected {}\n", .{conn.address});
+    defer conn.file.close();
 
     // try dns.helpers.sendPacket(sock, packet);
 

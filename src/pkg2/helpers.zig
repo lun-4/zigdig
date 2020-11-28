@@ -37,15 +37,39 @@ pub fn createRequestPacket(
 
 /// Open a socket to a random DNS resolver declared in the systems'
 /// "/etc/resolv.conf" file.
-pub fn openSocketAnyResolver() !std.fs.File {
+pub fn openSocketAnyResolver() !std.net.StreamServer.Connection {
     var out_buffer: [256]u8 = undefined;
-    const nameserver_address = (try resolvconf.randomNameserver(&out_buffer)).?;
+    const nameserver_address_string = (try resolvconf.randomNameserver(&out_buffer)).?;
 
-    std.debug.warn("selected {}\n", nameserver_address);
+    var addr = try std.net.Address.resolveIp(nameserver_address_string, 53);
+
+    var flags: u32 = std.os.SOCK_DGRAM;
+    const fd = try std.os.socket(std.os.AF_INET, flags, std.os.IPPROTO_UDP);
+
+    return std.net.StreamServer.Connection{
+        .address = addr,
+        .file = std.fs.File{ .handle = fd },
+    };
 }
 
 /// Send a DNS packet to socket.
-pub fn sendPacket(sock: std.fs.File, packet: root.Packet) !void {}
+pub fn sendPacket(conn: std.net.StreamServer.Connection, packet: root.Packet) !void {
+    // we hold this buffer because File won't use sendto()
+    // and we need sendto() for UDP sockets. (makes sense)
+    //
+    // this is a limitation of std.net.
+    var buffer: [1024]u8 = undefined;
+
+    const typ = io.FixedBufferStream([]u8);
+    var stream = typ{ .buffer = buffer, .pos = 0 };
+    var serializer = io.Serializer(.Big, .Bit, typ.Writer).init(stream.writer());
+
+    try serializer.serialize(packet);
+    try serializer.flush();
+
+    var result = buffer[0..packet.size()];
+    _ = try std.os.sendto(conn.file.handle, result, 0, &conn.address.any, @sizeOf(std.os.sockaddr));
+}
 
 /// Receive a DNS packet from a socket.
 pub fn recvPacket(sock: std.fs.File, read_buffer: []u8) !root.Packet {}

@@ -57,11 +57,16 @@ pub fn randomNameserver(output_buffer: []u8) !?[]const u8 {
     );
     defer file.close();
 
+    // iterate through all lines to find the amount of nameservers, then select
+    // a random one, then read AGAIN so that we can return it.
+    //
+    // this doesn't need any allocator or lists or whatever. just the
+    // output buffer
+
     try file.seekTo(0);
     var line_buffer: [1024]u8 = undefined;
     var nameserver_amount: usize = 0;
-
-    for (file.reader().readUntilDelimiterOrEof(&line_buffer, '\n')) |line| {
+    while (try file.reader().readUntilDelimiterOrEof(&line_buffer, '\n')) |line| {
         if (mem.startsWith(u8, line, "#")) continue;
 
         var ns_it = std.mem.split(line, " ");
@@ -75,11 +80,12 @@ pub fn randomNameserver(output_buffer: []u8) !?[]const u8 {
 
     const seed = @truncate(u64, @bitCast(u128, std.time.nanoTimestamp()));
     var r = std.rand.DefaultPrng.init(seed);
-    const selected = r.random().uintLessThan(nameserver_amount);
+    const selected = r.random.uintLessThan(usize, nameserver_amount);
+
     try file.seekTo(0);
 
     var current_nameserver: usize = 0;
-    for (file.reader().readUntilDelimiterOrEof(&line_buffer, '\n')) |line| {
+    while (try file.reader().readUntilDelimiterOrEof(&line_buffer, '\n')) |line| {
         if (mem.startsWith(u8, line, "#")) continue;
 
         var ns_it = std.mem.split(line, " ");
@@ -94,7 +100,7 @@ pub fn randomNameserver(output_buffer: []u8) !?[]const u8 {
                 return output_buffer[0..nameserver_addr.len];
             }
 
-            nameserver_amount += 1;
+            current_nameserver += 1;
         }
     }
 
