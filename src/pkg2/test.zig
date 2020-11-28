@@ -55,7 +55,7 @@ test "Packet serialize/deserialize" {
     const buf = try serialTest(packet, &write_buffer);
 
     // deserialize it and compare if everythings' equal
-    var workmem: [1024]u8 = undefined;
+    var workmem: [5000]u8 = undefined;
     var deserialized = try deserialTest(buf, &workmem);
 
     testing.expectEqual(deserialized.header.id, packet.header.id);
@@ -93,7 +93,7 @@ test "deserialization of original google.com/A" {
 
     var decoded = try decodeBase64(TEST_PKT_QUERY, &write_buffer);
 
-    var deserializer_buffer: [1024]u8 = undefined;
+    var deserializer_buffer: [0x10000]u8 = undefined;
     var pkt = try deserialTest(decoded, &deserializer_buffer);
 
     std.testing.expectEqual(@as(u16, 5189), pkt.header.id);
