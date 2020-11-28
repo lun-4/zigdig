@@ -123,7 +123,7 @@ pub const DeserializationContext = struct {
     allocator: *std.mem.Allocator,
     label_pool: StringList,
     name_pool: ManyStringList,
-    packet_list: ?ByteList = null,
+    packet_list: ?*ByteList = null,
 
     const Self = @This();
 
@@ -513,7 +513,7 @@ pub const Packet = struct {
     ) !void {
         const WrapperReaderType = WrapperReader(@TypeOf(upstream_reader));
         var wrapper_reader = WrapperReaderType.init(upstream_reader, ctx.allocator);
-        ctx.packet_list = wrapper_reader.data_list;
+        ctx.packet_list = &wrapper_reader.data_list;
         var reader = wrapper_reader.reader();
 
         const DeserializerType = std.io.Deserializer(.Big, .Bit, @TypeOf(reader));
