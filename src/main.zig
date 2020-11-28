@@ -229,11 +229,12 @@ pub fn main() !void {
         },
     };
 
-    const packet = try dns.helpers.createRequestPacket(allocator, name, qtype);
+    var name_buffer: [32][]const u8 = undefined;
+    const packet = try dns.helpers.createRequestPacket(name, &name_buffer, qtype);
     std.debug.warn("{}\n", .{packet});
 
-    // const sock = try dns.helpers.openSocketAnyResolver();
-    // defer sock.close();
+    const sock = try dns.helpers.openSocketAnyResolver();
+    defer sock.close();
 
     // try dns.helpers.sendPacket(sock, packet);
 
