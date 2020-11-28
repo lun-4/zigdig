@@ -149,138 +149,100 @@ pub const ResourceData = union(Type) {
             else => @panic("not implemented"),
         }
     }
-};
 
-/// Deserialize a given opaque resource data.
-pub fn deserializeRData(
-    allocator: *std.mem.Allocator,
-    opaque_resource_data: []const u8,
-) !ResourceData {
-    var in = dns.FixedStream{ .buffer = resource.opaque_rdata, .pos = 0 };
-    var deserializer = dns.DNSDeserializer.init(in.reader());
+    /// Deserialize a given opaque resource data.
+    pub fn deserializeResourceData(
+        allocator: *std.mem.Allocator,
+        opaque_resource_data: []const u8,
+    ) !ResourceData {
+        var in = dns.FixedStream{ .buffer = resource.opaque_rdata, .pos = 0 };
+        var deserializer = dns.DNSDeserializer.init(in.reader());
 
-    const BufferT = std.io.FixedBufferStream([]const u8);
-    var stream = BufferT{ .buffer = opaque_resource_data, .pos = 0 };
-    const DeserializerT = std.io.Deserializer(.Big, .Bit, BufferT.Reader);
+        const BufferT = std.io.FixedBufferStream([]const u8);
+        var stream = BufferT{ .buffer = opaque_resource_data, .pos = 0 };
+        const DeserializerT = std.io.Deserializer(.Big, .Bit, BufferT.Reader);
 
-    var deserializer = DeserializerT.init(stream);
+        var deserializer = DeserializerT.init(stream);
 
-    var rdata = switch (resource.rr_type) {
-        .A => blk: {
-            var ip4addr: [4]u8 = undefined;
-            for (ip4addr) |_, i| {
-                ip4addr[i] = try deserializer.deserialize(u8);
-            }
+        var rdata = switch (resource.rr_type) {
+            .A => blk: {
+                var ip4addr: [4]u8 = undefined;
+                for (ip4addr) |_, i| {
+                    ip4addr[i] = try deserializer.deserialize(u8);
+                }
 
-            break :blk ResourceData{
-                .A = std.net.Address.initIp4(ip4addr, 0),
-            };
-        },
-        .AAAA => blk: {
-            var ip6_addr: [16]u8 = undefined;
+                break :blk ResourceData{
+                    .A = std.net.Address.initIp4(ip4addr, 0),
+                };
+            },
+            .AAAA => blk: {
+                var ip6_addr: [16]u8 = undefined;
 
-            for (ip6_addr) |byte, i| {
-                ip6_addr[i] = try deserializer.deserialize(u8);
-            }
+                for (ip6_addr) |byte, i| {
+                    ip6_addr[i] = try deserializer.deserialize(u8);
+                }
 
-            break :blk ResourceData{
-                .AAAA = std.net.Address.initIp6(ip6_addr, 0, 0, 0),
-            };
-        },
+                break :blk ResourceData{
+                    .AAAA = std.net.Address.initIp6(ip6_addr, 0, 0, 0),
+                };
+            },
 
-        .NS => ResourceData{ .NS = try pkt.deserializeName(&deserializer) },
-        .CNAME => ResourceData{ .CNAME = try pkt.deserializeName(&deserializer) },
-        .PTR => ResourceData{ .PTR = try pkt.deserializeName(&deserializer) },
-        .MX => blk: {
-            break :blk ResourceData{
-                .MX = MXData{
-                    .preference = try deserializer.deserialize(u16),
-                    .exchange = try pkt.deserializeName(&deserializer),
-                },
-            };
-        },
-        .MD => ResourceData{ .MD = try pkt.deserializeName(&deserializer) },
-        .MF => ResourceData{ .MF = try pkt.deserializeName(&deserializer) },
+            .NS => ResourceData{ .NS = try pkt.deserializeName(&deserializer) },
+            .CNAME => ResourceData{ .CNAME = try pkt.deserializeName(&deserializer) },
+            .PTR => ResourceData{ .PTR = try pkt.deserializeName(&deserializer) },
+            .MX => blk: {
+                break :blk ResourceData{
+                    .MX = MXData{
+                        .preference = try deserializer.deserialize(u16),
+                        .exchange = try pkt.deserializeName(&deserializer),
+                    },
+                };
+            },
+            .MD => ResourceData{ .MD = try pkt.deserializeName(&deserializer) },
+            .MF => ResourceData{ .MF = try pkt.deserializeName(&deserializer) },
 
-        .SOA => blk: {
-            var mname = try pkt.deserializeName(&deserializer);
-            var rname = try pkt.deserializeName(&deserializer);
-            var serial = try deserializer.deserialize(u32);
-            var refresh = try deserializer.deserialize(u32);
-            var retry = try deserializer.deserialize(u32);
-            var expire = try deserializer.deserialize(u32);
-            var minimum = try deserializer.deserialize(u32);
+            .SOA => blk: {
+                var mname = try pkt.deserializeName(&deserializer);
+                var rname = try pkt.deserializeName(&deserializer);
+                var serial = try deserializer.deserialize(u32);
+                var refresh = try deserializer.deserialize(u32);
+                var retry = try deserializer.deserialize(u32);
+                var expire = try deserializer.deserialize(u32);
+                var minimum = try deserializer.deserialize(u32);
 
-            break :blk ResourceData{
-                .SOA = SOAData{
-                    .mname = mname,
-                    .rname = rname,
-                    .serial = serial,
-                    .refresh = refresh,
-                    .retry = retry,
-                    .expire = expire,
-                    .minimum = minimum,
-                },
-            };
-        },
-        .SRV => blk: {
-            const priority = try deserializer.deserialize(u16);
-            const weight = try deserializer.deserialize(u16);
-            const port = try deserializer.deserialize(u16);
-            var target = try pkt.deserializeName(&deserializer);
+                break :blk ResourceData{
+                    .SOA = SOAData{
+                        .mname = mname,
+                        .rname = rname,
+                        .serial = serial,
+                        .refresh = refresh,
+                        .retry = retry,
+                        .expire = expire,
+                        .minimum = minimum,
+                    },
+                };
+            },
+            .SRV => blk: {
+                const priority = try deserializer.deserialize(u16);
+                const weight = try deserializer.deserialize(u16);
+                const port = try deserializer.deserialize(u16);
+                var target = try pkt.deserializeName(&deserializer);
 
-            break :blk ResourceData{
-                .SRV = .{
-                    .priority = priority,
-                    .weight = weight,
-                    .port = port,
-                    .target = target,
-                },
-            };
-        },
+                break :blk ResourceData{
+                    .SRV = .{
+                        .priority = priority,
+                        .weight = weight,
+                        .port = port,
+                        .target = target,
+                    },
+                };
+            },
 
-        else => {
-            return error.InvalidRData;
-        },
-    };
+            else => {
+                return error.InvalidRData;
+            },
+        };
 
-    return rdata;
-}
-
-/// Serialize a given ResourceData into []u8
-pub fn serializeRData(
-    rdata: ResourceData,
-    serializer: anytype,
-) !void {
-    switch (rdata) {
-        .A => |addr| try serializer.serialize(addr.in.addr),
-        .AAAA => |addr| try serializer.serialize(addr.in6.addr),
-
-        .NS, .MD, .MF, .MB, .MG, .MR, .CNAME, .PTR => |name| try serializer.serialize(name),
-
-        .SOA => |soa_data| blk: {
-            try serializer.serialize(soa_data.mname);
-            try serializer.serialize(soa_data.rname);
-
-            try serializer.serialize(soa_data.serial);
-            try serializer.serialize(soa_data.refresh);
-            try serializer.serialize(soa_data.retry);
-            try serializer.serialize(soa_data.expire);
-            try serializer.serialize(soa_data.minimum);
-        },
-
-        .MX => |mxdata| blk: {
-            try serializer.serialize(mxdata.preference);
-            try serializer.serialize(mxdata.exchange);
-        },
-
-        .SRV => |srv| blk: {
-            try serializer.serialize(srv.priority);
-            try serializer.serialize(srv.weight);
-            try serializer.serialize(srv.port);
-            try serializer.serialize(srv.target);
-        },
-
-        else => return error.NotImplemented,
+        return rdata;
     }
-}
+};

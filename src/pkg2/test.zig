@@ -146,16 +146,14 @@ test "deserialization of reply google.com/A" {
     testing.expectEqual(dns.ResourceClass.IN, answer.class);
     testing.expectEqual(@as(i32, 300), answer.ttl);
 
-    // TODO RDATA
+    var answer_rdata = try rdata.deserializeRData(pkt, answer);
+    testing.expectEqual(dns.Type.A, @as(dns.Type, answer_rdata));
 
-    // var answer_rdata = try rdata.deserializeRData(pkt, answer);
-    // testing.expectEqual(dns.Type.A, @as(dns.Type, answer_rdata));
-
-    // const addr = @ptrCast(*[4]u8, &answer_rdata.A.in.addr).*;
-    // testing.expectEqual(@as(u8, 216), addr[0]);
-    // testing.expectEqual(@as(u8, 58), addr[1]);
-    // testing.expectEqual(@as(u8, 202), addr[2]);
-    // testing.expectEqual(@as(u8, 142), addr[3]);
+    const addr = @ptrCast(*[4]u8, &answer_rdata.A.in.addr).*;
+    testing.expectEqual(@as(u8, 216), addr[0]);
+    testing.expectEqual(@as(u8, 58), addr[1]);
+    testing.expectEqual(@as(u8, 202), addr[2]);
+    testing.expectEqual(@as(u8, 142), addr[3]);
 }
 
 fn encodeBase64(buffer: []u8, source: []const u8) []const u8 {
@@ -304,5 +302,5 @@ test "rdata serialization" {
 
     var encode_buffer: [1024]u8 = undefined;
     const encoded_result = encodeBase64(&encode_buffer, serialized_result);
-    testing.expectEqualSlices(u8, PACKET_WITH_RDATA, encoded_result);
+    testing.expectEqualStrings(PACKET_WITH_RDATA, encoded_result);
 }
