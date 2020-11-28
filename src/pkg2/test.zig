@@ -124,13 +124,14 @@ test "deserialization of reply google.com/A" {
     var encode_buffer: [0x10000]u8 = undefined;
     var decoded = try decodeBase64(TEST_PKT_RESPONSE, &encode_buffer);
 
-    var workmem: [5000]u8 = undefined;
+    var workmem: [0x100000]u8 = undefined;
     var pkt = try deserialTest(decoded, &workmem);
 
-    std.debug.assert(pkt.header.question_length == 1);
-    std.debug.assert(pkt.header.answer_length == 1);
-    std.debug.assert(pkt.header.nameserver_length == 0);
-    std.debug.assert(pkt.header.additional_length == 0);
+    std.testing.expectEqual(@as(u16, 17613), pkt.header.id);
+    std.testing.expectEqual(@as(u16, 1), pkt.header.question_length);
+    std.testing.expectEqual(@as(u16, 1), pkt.header.answer_length);
+    std.testing.expectEqual(@as(u16, 0), pkt.header.nameserver_length);
+    std.testing.expectEqual(@as(u16, 0), pkt.header.additional_length);
 
     var question = pkt.questions[0];
 

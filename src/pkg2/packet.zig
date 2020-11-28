@@ -440,12 +440,12 @@ pub const Packet = struct {
                     name_buffer[buffer_index] = label;
                     buffer_index += 1;
                 },
-                .Pointer => |ptr| {},
+                .Pointer => |name| return name,
                 .Null => break,
             }
         }
 
-        return Name{ .labels = name_buffer[0..(buffer_index - 1)] };
+        return Name{ .labels = name_buffer[0..(buffer_index)] };
     }
 
     /// (almost) Deserialize an RDATA section. This only deserializes to a slice of u8.
