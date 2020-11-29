@@ -26,12 +26,12 @@ test "zigdig" {
 }
 
 /// Print a slice of DNSResource to stderr.
-fn printList(allocator: *std.mem.Allocator, pkt: dns.Packet, resource_list: []dns.Resource) !void {
+fn printList(ctx: *dns.DeserializationContext, pkt: dns.Packet, resource_list: []dns.Resource) !void {
     // TODO the formatting here is not good...
     std.debug.warn(";;name\t\t\trrtype\tclass\tttl\trdata\n", .{});
 
     for (resource_list) |resource| {
-        var resource_data = try dns.ResourceData.fromOpaque(allocator, resource.typ, resource.opaque_rdata);
+        var resource_data = try dns.ResourceData.fromOpaque(ctx, resource.typ, resource.opaque_rdata);
 
         std.debug.warn("{}\t{}\t{}\t{}\t{}\n", .{
             resource.name,
@@ -46,7 +46,7 @@ fn printList(allocator: *std.mem.Allocator, pkt: dns.Packet, resource_list: []dn
 }
 
 /// Print a packet to stderr.
-pub fn printPacket(allocator: *std.mem.Allocator, pkt: dns.Packet) !void {
+pub fn printPacket(ctx: *dns.DeserializationContext, pkt: dns.Packet) !void {
     std.debug.warn("id: {}, opcode: {}, rcode: {}\n", .{
         pkt.header.id,
         pkt.header.opcode,
@@ -77,21 +77,21 @@ pub fn printPacket(allocator: *std.mem.Allocator, pkt: dns.Packet) !void {
 
     if (pkt.header.answer_length > 0) {
         std.debug.warn(";; -- answer --\n", .{});
-        try printList(allocator, pkt, pkt.answers);
+        try printList(ctx, pkt, pkt.answers);
     } else {
         std.debug.warn(";; no answer\n", .{});
     }
 
     if (pkt.header.nameserver_length > 0) {
         std.debug.warn(";; -- authority --\n", .{});
-        try printList(allocator, pkt, pkt.nameservers);
+        try printList(ctx, pkt, pkt.nameservers);
     } else {
         std.debug.warn(";; no authority\n\n", .{});
     }
 
     if (pkt.header.additional_length > 0) {
         std.debug.warn(";; -- additional --\n", .{});
-        try printList(allocator, pkt, pkt.additionals);
+        try printList(ctx, pkt, pkt.additionals);
     } else {
         std.debug.warn(";; no additional\n\n", .{});
     }
@@ -261,7 +261,10 @@ pub fn main() !void {
     try dns.helpers.sendPacket(conn, packet);
 
     var work_memory: [0x100000]u8 = undefined;
-    const reply = try dns.helpers.recvPacket(conn, &work_memory);
+    var fba = std.heap.FixedBufferAllocator.init(&work_memory);
+    var ctx = dns.DeserializationContext.init(&fba.allocator);
+
+    const reply = try dns.helpers.recvPacket(conn, &ctx);
 
     std.debug.warn("reply!!!: {}\n", .{reply});
 
@@ -269,7 +272,7 @@ pub fn main() !void {
     std.debug.assert(reply.header.is_response);
 
     switch (reply.header.response_code) {
-        .NoError => try printPacket(allocator, reply),
+        .NoError => try printPacket(&ctx, reply),
         .ServFail => std.debug.warn("shit, got SERVFAIL\n", .{}),
         .NotImplemented, .Refused, .FormatError, .NameError => @panic("unexpected response code"),
     }

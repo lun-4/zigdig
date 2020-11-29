@@ -47,14 +47,11 @@ pub fn sendPacket(conn: std.net.StreamServer.Connection, packet: root.Packet) !v
 }
 
 /// Receive a DNS packet from a socket.
-pub fn recvPacket(conn: std.net.StreamServer.Connection, work_memory: []u8) !root.Packet {
+pub fn recvPacket(conn: std.net.StreamServer.Connection, ctx: *dns.DeserializationContext) !root.Packet {
     var packet_buffer: [1024]u8 = undefined;
     const read_bytes = try conn.file.read(&packet_buffer);
 
     const packet_bytes = packet_buffer[0..read_bytes];
-
-    var fba = std.heap.FixedBufferAllocator.init(work_memory);
-    var ctx = dns.DeserializationContext.init(&fba.allocator);
 
     var pkt = dns.Packet{
         .header = .{},
@@ -65,7 +62,7 @@ pub fn recvPacket(conn: std.net.StreamServer.Connection, work_memory: []u8) !roo
     };
 
     var stream = std.io.FixedBufferStream([]const u8){ .buffer = packet_bytes, .pos = 0 };
-    try pkt.readInto(stream.reader(), &ctx);
+    try pkt.readInto(stream.reader(), ctx);
 
     return pkt;
 }

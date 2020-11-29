@@ -406,7 +406,7 @@ pub const Packet = struct {
     }
 
     /// Deserializes a DNS Name
-    fn readName(
+    pub fn readName(
         deserializer: anytype,
         ctx: *DeserializationContext,
         name_buffer: [][]const u8,

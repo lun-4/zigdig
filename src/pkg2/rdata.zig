@@ -152,7 +152,7 @@ pub const ResourceData = union(Type) {
 
     /// Deserialize a given opaque resource data.
     pub fn fromOpaque(
-        allocator: *std.mem.Allocator,
+        ctx: *dns.DeserializationContext,
         typ: dns.ResourceType,
         opaque_resource_data: []const u8,
     ) !ResourceData {
@@ -184,7 +184,12 @@ pub const ResourceData = union(Type) {
                 };
             },
 
-            // .NS => ResourceData{ .NS = try pkt.readName(&deserializer, ctx, name_buffer, null) },
+            .NS => blk: {
+                // TODO name buffer stuff
+                var name_buffer = try ctx.allocator.alloc([]u8, 32);
+                try ctx.name_pool.append(name_buffer);
+                break :blk ResourceData{ .NS = try dns.Packet.readName(&deserializer, ctx, name_buffer, null) };
+            },
             // .CNAME => ResourceData{ .CNAME = try pkt.deserializeName(&deserializer) },
             // .PTR => ResourceData{ .PTR = try pkt.deserializeName(&deserializer) },
             // .MX => blk: {
