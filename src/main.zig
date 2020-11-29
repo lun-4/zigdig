@@ -26,19 +26,19 @@ test "zigdig" {
 }
 
 /// Print a slice of DNSResource to stderr.
-fn printList(pkt: DNSPacket, resource_list: dns.ResourceList) !void {
+fn printList(allocator: *std.mem.Allocator, pkt: dns.Packet, resource_list: []dns.Resource) !void {
     // TODO the formatting here is not good...
     std.debug.warn(";;name\t\t\trrtype\tclass\tttl\trdata\n", .{});
 
-    for (resource_list.items) |resource| {
-        var pkt_rdata = try rdata.deserializeRData(pkt, resource);
+    for (resource_list) |resource| {
+        var resource_data = try dns.ResourceData.fromOpaque(allocator, resource.typ, resource.opaque_rdata);
 
         std.debug.warn("{}.\t{}\t{}\t{}\t{}\n", .{
-            try resource.name.toStr(pkt.allocator),
-            @tagName(resource.rr_type),
+            resource.name,
+            @tagName(resource.typ),
             @tagName(resource.class),
             resource.ttl,
-            pkt_rdata,
+            resource_data,
         });
     }
 
@@ -46,52 +46,52 @@ fn printList(pkt: DNSPacket, resource_list: dns.ResourceList) !void {
 }
 
 /// Print a packet to stderr.
-pub fn printPacket(pkt: DNSPacket) !void {
+pub fn printPacket(allocator: *std.mem.Allocator, pkt: dns.Packet) !void {
     std.debug.warn("id: {}, opcode: {}, rcode: {}\n", .{
         pkt.header.id,
         pkt.header.opcode,
-        pkt.header.rcode,
+        pkt.header.response_code,
     });
 
     std.debug.warn("qd: {}, an: {}, ns: {}, ar: {}\n\n", .{
-        pkt.header.qdcount,
-        pkt.header.ancount,
-        pkt.header.nscount,
-        pkt.header.arcount,
+        pkt.header.question_length,
+        pkt.header.answer_length,
+        pkt.header.nameserver_length,
+        pkt.header.additional_length,
     });
 
-    if (pkt.header.qdcount > 0) {
+    if (pkt.header.question_length > 0) {
         std.debug.warn(";;-- question --\n", .{});
-        std.debug.warn(";;qname\tqtype\tqclass\n", .{});
+        std.debug.warn(";;name\ttype\tclass\n", .{});
 
-        for (pkt.questions.items) |question| {
+        for (pkt.questions) |question| {
             std.debug.warn(";{}.\t{}\t{}\n", .{
-                try question.qname.toStr(pkt.allocator),
-                @tagName(question.qtype),
-                @tagName(question.qclass),
+                question.name,
+                @tagName(question.typ),
+                @tagName(question.class),
             });
         }
 
         std.debug.warn("\n", .{});
     }
 
-    if (pkt.header.ancount > 0) {
+    if (pkt.header.answer_length > 0) {
         std.debug.warn(";; -- answer --\n", .{});
-        try printList(pkt, pkt.answers);
+        try printList(allocator, pkt, pkt.answers);
     } else {
         std.debug.warn(";; no answer\n", .{});
     }
 
-    if (pkt.header.nscount > 0) {
+    if (pkt.header.nameserver_length > 0) {
         std.debug.warn(";; -- authority --\n", .{});
-        try printList(pkt, pkt.authority);
+        try printList(allocator, pkt, pkt.nameservers);
     } else {
         std.debug.warn(";; no authority\n\n", .{});
     }
 
-    if (pkt.header.ancount > 0) {
+    if (pkt.header.additional_length > 0) {
         std.debug.warn(";; -- additional --\n", .{});
-        try printList(pkt, pkt.additional);
+        try printList(allocator, pkt, pkt.additionals);
     } else {
         std.debug.warn(";; no additional\n\n", .{});
     }
@@ -269,8 +269,8 @@ pub fn main() !void {
     std.debug.assert(reply.header.is_response);
 
     switch (reply.header.response_code) {
-        .NoError => try printPacket(reply),
-        .ServFail => try printEmpty("SERVFAIL"),
+        .NoError => try printPacket(allocator, reply),
+        .ServFail => std.debug.warn("shit, got SERVFAIL\n", .{}),
         .NotImplemented, .Refused, .FormatError, .NameError => @panic("unexpected response code"),
     }
 }

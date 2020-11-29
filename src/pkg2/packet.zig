@@ -7,10 +7,10 @@ const ResourceClass = root.ResourceClass;
 
 pub const ResponseCode = enum(u4) {
     NoError = 0,
-    FmtError = 1,
+    FormatError = 1,
     ServFail = 2,
-    NameErr = 3,
-    NotImpl = 4,
+    NameError = 3,
+    NotImplemented = 4,
     Refused = 5,
 };
 
@@ -48,7 +48,7 @@ pub const Header = packed struct {
     z: u3 = 0,
 
     /// Response code.
-    rcode: ResponseCode = .NoError,
+    response_code: ResponseCode = .NoError,
 
     /// Amount of questions in the packet.
     question_length: u16 = 0,
