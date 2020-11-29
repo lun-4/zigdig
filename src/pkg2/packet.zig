@@ -123,7 +123,7 @@ pub const DeserializationContext = struct {
     allocator: *std.mem.Allocator,
     label_pool: StringList,
     name_pool: ManyStringList,
-    packet_list: ?*ByteList = null,
+    packet_list: ByteList,
 
     const Self = @This();
 
@@ -132,6 +132,7 @@ pub const DeserializationContext = struct {
             .allocator = allocator,
             .label_pool = StringList.init(allocator),
             .name_pool = ManyStringList.init(allocator),
+            .packet_list = ByteList.init(allocator),
         };
     }
 
@@ -147,6 +148,8 @@ pub const DeserializationContext = struct {
         }
 
         self.name_pool.deinit();
+
+        self.packet_list.deinit();
     }
 
     pub fn newLabel(self: *Self, length: usize) ![]u8 {
@@ -166,34 +169,26 @@ const LabelComponent = union(enum) {
 fn WrapperReader(comptime ReaderType: anytype) type {
     return struct {
         underlying_reader: ReaderType,
-        allocator: *std.mem.Allocator,
-        data_list: ByteList,
+        ctx: *DeserializationContext,
 
         const Self = @This();
 
-        pub fn init(underlying_reader: ReaderType, allocator: *std.mem.Allocator) Self {
+        pub fn init(underlying_reader: ReaderType, ctx: *DeserializationContext) Self {
             return .{
                 .underlying_reader = underlying_reader,
-                .allocator = allocator,
-                .data_list = ByteList.init(allocator),
+                .ctx = ctx,
             };
-        }
-
-        pub fn deinit(self: *Self) void {
-            self.list.deinit();
         }
 
         pub fn read(self: *Self, buffer: []u8) !usize {
             const bytes_read = try self.underlying_reader.read(buffer);
             const bytes = buffer[0..bytes_read];
-            try self.data_list.writer().writeAll(bytes);
+            try self.ctx.packet_list.writer().writeAll(bytes);
             return bytes_read;
         }
 
         pub const Error = ReaderType.Error || error{OutOfMemory};
-
         pub const Reader = std.io.Reader(*Self, Error, read);
-
         pub fn reader(self: *Self) Reader {
             return Reader{ .context = self };
         }
@@ -316,14 +311,14 @@ pub const Packet = struct {
         // TODO a way to hold the memory we deserialized, maybe a custom
         // wrapper Reader that allocates and stores the bytes it read? i think
         // we already have that kind of thing in std, but i need more time
-        var offset_size_opt = std.mem.indexOf(u8, ctx.packet_list.?.items[offset..], "\x00");
+        var offset_size_opt = std.mem.indexOf(u8, ctx.packet_list.items[offset..], "\x00");
         if (offset_size_opt == null) return error.ParseFail;
         var offset_size = offset_size_opt.?;
 
         // from our slice, we need to read a name from it. we do it via
         // creating a FixedBufferStream, extracting a reader from it, creating
         // a deserializer, and feeding that to readName.
-        const label_data = ctx.packet_list.?.items[offset .. offset + (offset_size + 1)];
+        const label_data = ctx.packet_list.items[offset .. offset + (offset_size + 1)];
 
         const T = std.io.FixedBufferStream([]const u8);
         const InnerDeserializer = std.io.Deserializer(.Big, .Bit, T.Reader);
@@ -515,8 +510,7 @@ pub const Packet = struct {
         ctx: *DeserializationContext,
     ) !void {
         const WrapperReaderType = WrapperReader(@TypeOf(upstream_reader));
-        var wrapper_reader = WrapperReaderType.init(upstream_reader, ctx.allocator);
-        ctx.packet_list = &wrapper_reader.data_list;
+        var wrapper_reader = WrapperReaderType.init(upstream_reader, ctx);
         var reader = wrapper_reader.reader();
 
         const DeserializerType = std.io.Deserializer(.Big, .Bit, @TypeOf(reader));

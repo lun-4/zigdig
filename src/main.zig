@@ -262,7 +262,9 @@ pub fn main() !void {
 
     var work_memory: [0x100000]u8 = undefined;
     var fba = std.heap.FixedBufferAllocator.init(&work_memory);
+
     var ctx = dns.DeserializationContext.init(&fba.allocator);
+    defer ctx.deinit();
 
     const reply = try dns.helpers.recvPacket(conn, &ctx);
 
