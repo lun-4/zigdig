@@ -184,61 +184,56 @@ pub const ResourceData = union(Type) {
                 };
             },
 
-            .NS => blk: {
-                // TODO name buffer stuff
-                var name_buffer = try ctx.allocator.alloc([]u8, 32);
-                try ctx.name_pool.append(name_buffer);
-                break :blk ResourceData{ .NS = try dns.Packet.readName(&deserializer, ctx, name_buffer, null) };
+            .NS => ResourceData{ .NS = try dns.Packet.readName(&deserializer, ctx, try createNameBuffer(ctx), null) },
+            .CNAME => ResourceData{ .CNAME = try dns.Packet.readName(&deserializer, ctx, try createNameBuffer(ctx), null) },
+            .PTR => ResourceData{ .PTR = try dns.Packet.readName(&deserializer, ctx, try createNameBuffer(ctx), null) },
+            .MX => blk: {
+                break :blk ResourceData{
+                    .MX = MXData{
+                        .preference = try deserializer.deserialize(u16),
+                        .exchange = try dns.Packet.readName(&deserializer, ctx, try createNameBuffer(ctx), null),
+                    },
+                };
             },
-            // .CNAME => ResourceData{ .CNAME = try pkt.deserializeName(&deserializer) },
-            // .PTR => ResourceData{ .PTR = try pkt.deserializeName(&deserializer) },
-            // .MX => blk: {
-            //     break :blk ResourceData{
-            //         .MX = MXData{
-            //             .preference = try deserializer.deserialize(u16),
-            //             .exchange = try pkt.deserializeName(&deserializer),
-            //         },
-            //     };
-            // },
-            // .MD => ResourceData{ .MD = try pkt.deserializeName(&deserializer) },
-            // .MF => ResourceData{ .MF = try pkt.deserializeName(&deserializer) },
+            .MD => ResourceData{ .MD = try dns.Packet.readName(&deserializer, ctx, try createNameBuffer(ctx), null) },
+            .MF => ResourceData{ .MF = try dns.Packet.readName(&deserializer, ctx, try createNameBuffer(ctx), null) },
 
-            // .SOA => blk: {
-            //     var mname = try pkt.deserializeName(&deserializer);
-            //     var rname = try pkt.deserializeName(&deserializer);
-            //     var serial = try deserializer.deserialize(u32);
-            //     var refresh = try deserializer.deserialize(u32);
-            //     var retry = try deserializer.deserialize(u32);
-            //     var expire = try deserializer.deserialize(u32);
-            //     var minimum = try deserializer.deserialize(u32);
+            .SOA => blk: {
+                var mname = try dns.Packet.readName(&deserializer, ctx, try createNameBuffer(ctx), null);
+                var rname = try dns.Packet.readName(&deserializer, ctx, try createNameBuffer(ctx), null);
+                var serial = try deserializer.deserialize(u32);
+                var refresh = try deserializer.deserialize(u32);
+                var retry = try deserializer.deserialize(u32);
+                var expire = try deserializer.deserialize(u32);
+                var minimum = try deserializer.deserialize(u32);
 
-            //     break :blk ResourceData{
-            //         .SOA = SOAData{
-            //             .mname = mname,
-            //             .rname = rname,
-            //             .serial = serial,
-            //             .refresh = refresh,
-            //             .retry = retry,
-            //             .expire = expire,
-            //             .minimum = minimum,
-            //         },
-            //     };
-            // },
-            // .SRV => blk: {
-            //     const priority = try deserializer.deserialize(u16);
-            //     const weight = try deserializer.deserialize(u16);
-            //     const port = try deserializer.deserialize(u16);
-            //     var target = try pkt.deserializeName(&deserializer);
+                break :blk ResourceData{
+                    .SOA = SOAData{
+                        .mname = mname,
+                        .rname = rname,
+                        .serial = serial,
+                        .refresh = refresh,
+                        .retry = retry,
+                        .expire = expire,
+                        .minimum = minimum,
+                    },
+                };
+            },
+            .SRV => blk: {
+                const priority = try deserializer.deserialize(u16);
+                const weight = try deserializer.deserialize(u16);
+                const port = try deserializer.deserialize(u16);
+                var target = try dns.Packet.readName(&deserializer, ctx, try createNameBuffer(ctx), null);
 
-            //     break :blk ResourceData{
-            //         .SRV = .{
-            //             .priority = priority,
-            //             .weight = weight,
-            //             .port = port,
-            //             .target = target,
-            //         },
-            //     };
-            // },
+                break :blk ResourceData{
+                    .SRV = .{
+                        .priority = priority,
+                        .weight = weight,
+                        .port = port,
+                        .target = target,
+                    },
+                };
+            },
 
             else => {
                 std.debug.warn("unexpected rdata: {}\n", .{typ});
@@ -249,3 +244,11 @@ pub const ResourceData = union(Type) {
         return rdata;
     }
 };
+
+fn createNameBuffer(ctx: *dns.DeserializationContext) ![][]const u8 {
+    // TODO should we just keep this hardcoded? how could we better manage those
+    // name buffers?
+    var name_buffer = try ctx.allocator.alloc([]const u8, 32);
+    try ctx.name_pool.append(name_buffer);
+    return name_buffer;
+}

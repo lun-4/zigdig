@@ -117,7 +117,7 @@ pub const Resource = struct {
 
 const ByteList = std.ArrayList(u8);
 const StringList = std.ArrayList([]u8);
-const ManyStringList = std.ArrayList([][]u8);
+const ManyStringList = std.ArrayList([][]const u8);
 
 pub const DeserializationContext = struct {
     allocator: *std.mem.Allocator,
