@@ -232,28 +232,45 @@ pub fn main() !void {
     var name_buffer: [32][]const u8 = undefined;
     const name = try dns.Name.fromString(name_string, &name_buffer);
 
-    const packet = try dns.helpers.createRequestPacket(name, qtype);
+    const packet = dns.Packet{
+        .header = .{
+            .id = dns.helpers.randomId(),
+            .is_response = false,
+            .wanted_recursion = true,
+            .question_length = 1,
+        },
+        .questions = &[_]dns.Question{
+            .{
+                .name = name,
+                .typ = qtype,
+                .class = .IN,
+            },
+        },
+        .answers = &[_]dns.Resource{},
+        .nameservers = &[_]dns.Resource{},
+        .additionals = &[_]dns.Resource{},
+    };
+
     std.debug.warn("{}\n", .{packet});
-    std.debug.warn("{}\n", .{packet.questions[0]});
-    std.debug.warn("name: {}\n", .{packet.questions[0].name});
-    std.debug.warn("name: {}\n", .{packet.questions[0].name.labels.ptr});
-    std.debug.warn("name: {}\n", .{packet.questions[0].name.labels.len});
 
     const conn = try dns.helpers.openSocketAnyResolver();
-    std.debug.warn("selected {}\n", .{conn.address});
     defer conn.file.close();
+
+    std.debug.warn("selected nameserver: {}\n", .{conn.address});
 
     try dns.helpers.sendPacket(conn, packet);
 
-    // var buffer: [1024]u8 = undefined;
-    // const reply = try dns.helpers.recvPacket(sock, &buffer);
+    var work_memory: [0x100000]u8 = undefined;
+    const reply = try dns.helpers.recvPacket(conn, &work_memory);
 
-    // std.debug.assert(reply.header.id == packet.header.id);
-    // std.debug.assert(!reply.header.is_question);
+    std.debug.warn("reply!!!: {}\n", .{reply});
 
-    // switch (reply.header.response_code) {
-    //     .NoError => try printPacket(reply),
-    //     .ServFail => try printEmpty("SERVFAIL"),
-    //     .NotImplemented, .Refused, .FormatError, .NameError => @panic("unexpected response code"),
-    // }
+    std.debug.assert(reply.header.id == packet.header.id);
+    std.debug.assert(reply.header.is_response);
+
+    switch (reply.header.response_code) {
+        .NoError => try printPacket(reply),
+        .ServFail => try printEmpty("SERVFAIL"),
+        .NotImplemented, .Refused, .FormatError, .NameError => @panic("unexpected response code"),
+    }
 }
