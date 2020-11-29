@@ -33,7 +33,7 @@ fn printList(allocator: *std.mem.Allocator, pkt: dns.Packet, resource_list: []dn
     for (resource_list) |resource| {
         var resource_data = try dns.ResourceData.fromOpaque(allocator, resource.typ, resource.opaque_rdata);
 
-        std.debug.warn("{}.\t{}\t{}\t{}\t{}\n", .{
+        std.debug.warn("{}\t{}\t{}\t{}\t{}\n", .{
             resource.name,
             @tagName(resource.typ),
             @tagName(resource.class),
@@ -65,7 +65,7 @@ pub fn printPacket(allocator: *std.mem.Allocator, pkt: dns.Packet) !void {
         std.debug.warn(";;name\ttype\tclass\n", .{});
 
         for (pkt.questions) |question| {
-            std.debug.warn(";{}.\t{}\t{}\n", .{
+            std.debug.warn(";{}\t{}\t{}\n", .{
                 question.name,
                 @tagName(question.typ),
                 @tagName(question.class),

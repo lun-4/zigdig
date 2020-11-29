@@ -266,7 +266,6 @@ pub const Packet = struct {
     }
 
     fn unfoldPointer(
-        self: *Self,
         first_offset_component: u8,
         deserializer: anytype,
         ctx: *DeserializationContext,
@@ -339,7 +338,7 @@ pub const Packet = struct {
         // TODO: no name buffer available here. i think we can create a
         // NameDeserializationContext which holds both the name buffer AND
         // the index so we could keep appending new labels to it
-        return self.readName(&new_deserializer, ctx, name_buffer, name_index);
+        return Self.readName(&new_deserializer, ctx, name_buffer, name_index);
     }
 
     /// Deserialize a LabelComponent, which can be:
@@ -347,7 +346,6 @@ pub const Packet = struct {
     ///  - a label
     ///  - a null octet
     fn readLabel(
-        self: *Self,
         deserializer: anytype,
         ctx: *DeserializationContext,
         name_buffer: [][]const u8,
@@ -381,7 +379,7 @@ pub const Packet = struct {
 
         if (bit1 and bit2) {
             // its a pointer!
-            var name = try self.unfoldPointer(
+            var name = try Self.unfoldPointer(
                 possible_length,
                 deserializer,
                 ctx,
@@ -409,7 +407,6 @@ pub const Packet = struct {
 
     /// Deserializes a DNS Name
     fn readName(
-        self: *Self,
         deserializer: anytype,
         ctx: *DeserializationContext,
         name_buffer: [][]const u8,
@@ -440,7 +437,7 @@ pub const Packet = struct {
         // else, fill label
 
         while (true) {
-            var component: LabelComponent = try self.readLabel(deserializer, ctx, name_buffer, buffer_index);
+            var component: LabelComponent = try Self.readLabel(deserializer, ctx, name_buffer, buffer_index);
             switch (component) {
                 .Full => |label| {
                     name_buffer[buffer_index] = label;
@@ -490,7 +487,7 @@ pub const Packet = struct {
             var name_buffer = try ctx.allocator.alloc([]u8, 32);
             try ctx.name_pool.append(name_buffer);
 
-            var name = try self.readName(deserializer, ctx, name_buffer, null);
+            var name = try Self.readName(deserializer, ctx, name_buffer, null);
             var typ = try deserializer.deserialize(u16);
             var class = try deserializer.deserialize(u16);
             var ttl = try deserializer.deserialize(i32);
@@ -533,7 +530,7 @@ pub const Packet = struct {
             var name_buffer = try ctx.allocator.alloc([]u8, 32);
             try ctx.name_pool.append(name_buffer);
 
-            var name = try self.readName(&deserializer, ctx, name_buffer, null);
+            var name = try Self.readName(&deserializer, ctx, name_buffer, null);
             var qtype = try deserializer.deserialize(u16);
             var qclass = try deserializer.deserialize(u16);
 

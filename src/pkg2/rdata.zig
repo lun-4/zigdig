@@ -184,7 +184,7 @@ pub const ResourceData = union(Type) {
                 };
             },
 
-            // .NS => ResourceData{ .NS = try pkt.deserializeName(&deserializer) },
+            // .NS => ResourceData{ .NS = try pkt.readName(&deserializer, ctx, name_buffer, null) },
             // .CNAME => ResourceData{ .CNAME = try pkt.deserializeName(&deserializer) },
             // .PTR => ResourceData{ .PTR = try pkt.deserializeName(&deserializer) },
             // .MX => blk: {
@@ -236,6 +236,7 @@ pub const ResourceData = union(Type) {
             // },
 
             else => {
+                std.debug.warn("unexpected rdata: {}\n", .{typ});
                 return error.InvalidRData;
             },
         };
