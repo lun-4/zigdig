@@ -1,6 +1,9 @@
-const Builder = @import("std").build.Builder;
-
+const Builder = std.build.Builder;
+const std = @import("std");
 pub fn build(b: *Builder) void {
+    const target = b.standardTargetOptions(.{
+        .default_target = .{ .cpu_model = .baseline },
+    });
     const mode = b.standardReleaseOptions();
 
     // this exports both a library and a binary
@@ -8,6 +11,7 @@ pub fn build(b: *Builder) void {
     // TODO separate exe entrypoint and lib entrypoint
 
     const exe = b.addExecutable("zigdig", "src/main.zig");
+    exe.setTarget(target);
     exe.setBuildMode(mode);
 
     // const exe2 = b.addExecutable("zigdig-async", "src/async_main.zig");
@@ -17,6 +21,7 @@ pub fn build(b: *Builder) void {
     // exe3.setBuildMode(mode);
 
     const lib = b.addStaticLibrary("zigdig", "src/pkg2/dns.zig");
+    lib.setTarget(target);
     lib.setBuildMode(mode);
 
     var lib_tests = b.addTest("src/pkg2/dns.zig");
