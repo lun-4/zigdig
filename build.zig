@@ -1,9 +1,22 @@
 const Builder = std.build.Builder;
 const std = @import("std");
 pub fn build(b: *Builder) void {
-    const target = b.standardTargetOptions(.{
-        .default_target = .{ .cpu_model = .baseline },
-    });
+    const native_opt = b.option(bool, "native", "if many cpu, turn this on");
+    const is_native = native_opt orelse true;
+
+    var target: std.zig.CrossTarget = undefined;
+
+    if (is_native) {
+        target = b.standardTargetOptions(.{});
+    } else {
+        // my friends amd cpu is an fx 6300 and it kind of didnt work so
+        target = b.standardTargetOptions(.{
+            .default_target = .{
+                .cpu_model = .{ .explicit = &std.Target.x86.cpu.athlon_fx },
+            },
+        });
+    }
+
     const mode = b.standardReleaseOptions();
 
     // this exports both a library and a binary
