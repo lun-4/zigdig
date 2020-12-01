@@ -273,9 +273,5 @@ pub fn main() !void {
     std.debug.assert(reply.header.id == packet.header.id);
     std.debug.assert(reply.header.is_response);
 
-    switch (reply.header.response_code) {
-        .NoError => try printPacket(&ctx, reply),
-        .ServFail => std.debug.warn("shit, got SERVFAIL\n", .{}),
-        .NotImplemented, .Refused, .FormatError, .NameError => @panic("unexpected response code"),
-    }
+    try printPacket(&ctx, reply);
 }
