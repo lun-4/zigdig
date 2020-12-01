@@ -62,7 +62,7 @@ pub const ResourceData = union(Type) {
         emailbx: dns.Name,
     },
     MX: MXData,
-    TXT: [][]const u8,
+    TXT: []const u8,
 
     SRV: SRVData,
 
@@ -73,6 +73,13 @@ pub const ResourceData = union(Type) {
             .A => 4,
             .AAAA => 16,
             .NS, .MD, .MF, .MB, .MG, .MR, .CNAME, .PTR => |name| name.size(),
+            .TXT => |text| blk: {
+                var len: usize = 0;
+                len += @sizeOf(u16) * text.len;
+                for (text) |string| {
+                    len += string.len;
+                }
+            },
 
             else => @panic("TODO"),
         };
@@ -110,9 +117,9 @@ pub const ResourceData = union(Type) {
                 srv.target,
             }),
 
+            .TXT => |text| return fmt.format(writer, "{}", .{text}),
             else => return fmt.format(writer, "TODO support {}", .{@tagName(self)}),
         }
-        return fmt.format(writer, "{}");
     }
 
     pub fn serialize(self: Self, serializer: anytype) !void {
@@ -233,6 +240,18 @@ pub const ResourceData = union(Type) {
                         .target = target,
                     },
                 };
+            },
+            .TXT => blk: {
+                var txt_buffer = try ctx.allocator.alloc(u8, 256);
+                try ctx.label_pool.append(txt_buffer);
+
+                const length = try deserializer.deserialize(u8);
+                var idx: usize = 0;
+                while (idx < length) : (idx += 1) {
+                    txt_buffer[idx] = try deserializer.deserialize(u8);
+                }
+
+                break :blk ResourceData{ .TXT = txt_buffer[0..idx] };
             },
 
             else => {
