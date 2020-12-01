@@ -479,7 +479,7 @@ pub const Packet = struct {
         var i: usize = 0;
         while (i < length) : (i += 1) {
             // TODO name buffer stuff
-            var name_buffer = try ctx.allocator.alloc([]u8, 32);
+            var name_buffer = try ctx.allocator.alloc([]u8, 128);
             try ctx.name_pool.append(name_buffer);
 
             var name = try Self.readName(deserializer, ctx, name_buffer, null);
@@ -521,7 +521,7 @@ pub const Packet = struct {
 
         var i: usize = 0;
         while (i < self.header.question_length) {
-            var name_buffer = try ctx.allocator.alloc([]u8, 32);
+            var name_buffer = try ctx.allocator.alloc([]u8, 128);
             try ctx.name_pool.append(name_buffer);
 
             var name = try Self.readName(&deserializer, ctx, name_buffer, null);

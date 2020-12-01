@@ -229,7 +229,7 @@ pub fn main() !void {
         },
     };
 
-    var name_buffer: [32][]const u8 = undefined;
+    var name_buffer: [128][]const u8 = undefined;
     const name = try dns.Name.fromString(name_string, &name_buffer);
 
     const packet = dns.Packet{

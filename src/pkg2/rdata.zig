@@ -248,7 +248,7 @@ pub const ResourceData = union(Type) {
 fn createNameBuffer(ctx: *dns.DeserializationContext) ![][]const u8 {
     // TODO should we just keep this hardcoded? how could we better manage those
     // name buffers?
-    var name_buffer = try ctx.allocator.alloc([]const u8, 32);
+    var name_buffer = try ctx.allocator.alloc([]const u8, 128);
     try ctx.name_pool.append(name_buffer);
     return name_buffer;
 }
