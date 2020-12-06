@@ -19,7 +19,7 @@ pub fn openSocketAnyResolver() !std.net.StreamServer.Connection {
     var addr = try std.net.Address.resolveIp(nameserver_address_string, 53);
 
     var flags: u32 = std.os.SOCK_DGRAM;
-    const fd = try std.os.socket(std.os.AF_INET, flags, std.os.IPPROTO_UDP);
+    const fd = try std.os.socket(addr.any.family, flags, std.os.IPPROTO_UDP);
 
     return std.net.StreamServer.Connection{
         .address = addr,
@@ -43,7 +43,13 @@ pub fn sendPacket(conn: std.net.StreamServer.Connection, packet: root.Packet) !v
     try serializer.flush();
 
     var result = buffer[0..packet.size()];
-    _ = try std.os.sendto(conn.file.handle, result, 0, &conn.address.any, @sizeOf(std.os.sockaddr));
+    const dest_len: u32 = switch (conn.address.any.family) {
+        std.os.AF_INET => @sizeOf(std.os.sockaddr_in),
+        std.os.AF_INET6 => @sizeOf(std.os.sockaddr_in6),
+        else => unreachable,
+    };
+
+    _ = try std.os.sendto(conn.file.handle, result, 0, &conn.address.any, dest_len);
 }
 
 /// Receive a DNS packet from a socket.
