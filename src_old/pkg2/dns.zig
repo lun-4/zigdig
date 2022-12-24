@@ -12,7 +12,7 @@ pub const Packet = packet.Packet;
 pub const Resource = packet.Resource;
 pub const DeserializationContext = packet.DeserializationContext;
 
-test "" {
+test "root" {
     std.testing.refAllDecls(@import("./test.zig"));
     std.testing.refAllDecls(@This());
 }
