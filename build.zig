@@ -5,7 +5,6 @@ pub fn build(b: *Builder) void {
     const is_native = native_opt orelse true;
 
     var target: std.zig.CrossTarget = undefined;
-
     if (is_native) {
         target = b.standardTargetOptions(.{});
     } else {
@@ -27,13 +26,7 @@ pub fn build(b: *Builder) void {
     exe.setTarget(target);
     exe.setBuildMode(mode);
 
-    // const exe2 = b.addExecutable("zigdig-async", "src/async_main.zig");
-    // exe2.setBuildMode(mode);
-
-    // const exe3 = b.addExecutable("zigdig-stdin", "src/main_stdin.zig");
-    // exe3.setBuildMode(mode);
-
-    const lib = b.addStaticLibrary("zigdig", "src/pkg2/dns.zig");
+    const lib = b.addStaticLibrary("zigdig", "src/lib.zig");
     lib.setTarget(target);
     lib.setBuildMode(mode);
 
@@ -49,16 +42,10 @@ pub fn build(b: *Builder) void {
 
     b.default_step.dependOn(&lib.step);
     b.default_step.dependOn(&exe.step);
-    // b.default_step.dependOn(&exe2.step);
-    // b.default_step.dependOn(&exe3.step);
 
-    lib.addPackagePath("dns", "src/pkg2/dns.zig");
-    exe.addPackagePath("dns", "src/pkg2/dns.zig");
-    // exe2.addPackagePath("dns", "src/pkg/dns.zig");
-    // exe3.addPackagePath("dns", "src/pkg/dns.zig");
+    lib.addPackagePath("dns", "src/lib.zig");
+    exe.addPackagePath("dns", "src/lib.zig");
 
     b.installArtifact(lib);
     b.installArtifact(exe);
-    // b.installArtifact(exe2);
-    // b.installArtifact(exe3);
 }
