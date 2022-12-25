@@ -65,14 +65,14 @@ test "Packet serialize/deserialize" {
 }
 
 fn decodeBase64(encoded: []const u8, write_buffer: []u8) ![]const u8 {
-    const size = try std.base64.standard_decoder.calcSize(encoded);
-    try std.base64.standard_decoder.decode(write_buffer[0..size], encoded);
+    const size = try std.base64.standard.Decoder.calcSizeForSlice(encoded);
+    try std.base64.standard.Decoder.decode(write_buffer[0..size], encoded);
     return write_buffer[0..size];
 }
 
-fn expectGoogleLabels(actual: [][]const u8) void {
+fn expectGoogleLabels(actual: [][]const u8) !void {
     for (actual) |label, idx| {
-        std.testing.expectEqualSlices(u8, label, GOOGLE_COM_LABELS[idx]);
+        try std.testing.expectEqualSlices(u8, label, GOOGLE_COM_LABELS[idx]);
     }
 }
 
@@ -104,49 +104,40 @@ test "deserialization of original google.com/A" {
 }
 
 test "deserialization of reply google.com/A" {
-    if (true) {
-        return error.SkipZigTest;
-    }
-
-    var allocator_instance = std.heap.GeneralPurposeAllocator(.{}){};
-    defer {
-        _ = allocator_instance.deinit();
-    }
-    const allocator = &allocator_instance.allocator;
-
+    if (true) return error.SkipZigTest;
     var encode_buffer: [0x10000]u8 = undefined;
     var decoded = try decodeBase64(TEST_PKT_RESPONSE, &encode_buffer);
 
     var workmem: [0x100000]u8 = undefined;
     var pkt = try deserialTest(decoded, &workmem);
 
-    std.testing.expectEqual(@as(u16, 17613), pkt.header.id);
-    std.testing.expectEqual(@as(u16, 1), pkt.header.question_length);
-    std.testing.expectEqual(@as(u16, 1), pkt.header.answer_length);
-    std.testing.expectEqual(@as(u16, 0), pkt.header.nameserver_length);
-    std.testing.expectEqual(@as(u16, 0), pkt.header.additional_length);
+    try std.testing.expectEqual(@as(u16, 17613), pkt.header.id);
+    try std.testing.expectEqual(@as(u16, 1), pkt.header.question_length);
+    try std.testing.expectEqual(@as(u16, 1), pkt.header.answer_length);
+    try std.testing.expectEqual(@as(u16, 0), pkt.header.nameserver_length);
+    try std.testing.expectEqual(@as(u16, 0), pkt.header.additional_length);
 
     var question = pkt.questions[0];
 
-    expectGoogleLabels(question.name.labels);
-    testing.expectEqual(dns.ResourceType.A, question.typ);
-    testing.expectEqual(dns.ResourceClass.IN, question.class);
+    try expectGoogleLabels(question.name.labels);
+    try testing.expectEqual(dns.ResourceType.A, question.typ);
+    try testing.expectEqual(dns.ResourceClass.IN, question.class);
 
     var answer = pkt.answers[0];
 
-    expectGoogleLabels(answer.name.labels);
-    testing.expectEqual(dns.ResourceType.A, answer.typ);
-    testing.expectEqual(dns.ResourceClass.IN, answer.class);
-    testing.expectEqual(@as(i32, 300), answer.ttl);
+    try expectGoogleLabels(answer.name.labels);
+    try testing.expectEqual(dns.ResourceType.A, answer.typ);
+    try testing.expectEqual(dns.ResourceClass.IN, answer.class);
+    try testing.expectEqual(@as(i32, 300), answer.ttl);
 
-    const resource_data = try dns.ResourceData.fromOpaque(allocator, .A, answer.opaque_rdata);
-    testing.expectEqual(dns.ResourceType.A, @as(dns.ResourceType, resource_data));
+    const resource_data = try dns.ResourceData.fromOpaque(.A, answer.opaque_rdata);
+    try testing.expectEqual(dns.ResourceType.A, @as(dns.ResourceType, resource_data));
 
     const addr = @ptrCast(*const [4]u8, &resource_data.A.in.sa.addr).*;
-    testing.expectEqual(@as(u8, 216), addr[0]);
-    testing.expectEqual(@as(u8, 58), addr[1]);
-    testing.expectEqual(@as(u8, 202), addr[2]);
-    testing.expectEqual(@as(u8, 142), addr[3]);
+    try testing.expectEqual(@as(u8, 216), addr[0]);
+    try testing.expectEqual(@as(u8, 58), addr[1]);
+    try testing.expectEqual(@as(u8, 202), addr[2]);
+    try testing.expectEqual(@as(u8, 142), addr[3]);
 }
 
 fn encodeBase64(buffer: []u8, source: []const u8) []const u8 {
@@ -184,8 +175,6 @@ test "serialization of google.com/A (question)" {
     var encode_buffer: [256]u8 = undefined;
     var write_buffer: [256]u8 = undefined;
     var encoded = try encodePacket(packet, &encode_buffer, &write_buffer);
-    const logger = std.log.scoped(.sex);
-    logger.warn("encoded: {s}", .{encoded});
     try std.testing.expectEqualSlices(u8, TEST_PKT_QUERY, encoded);
 }
 
@@ -214,15 +203,21 @@ test "convert string to dns type" {
     try std.testing.expectEqual(dns.ResourceType.AAAA, parsed);
 }
 
-test "size() methods are good" {
-    if (true) {
-        return error.SkipZigTest;
-    }
+test "names have good sizes" {
     var name_buffer: [10][]const u8 = undefined;
     var name = try dns.Name.fromString("example.com", &name_buffer);
 
+    var buf: [256]u8 = undefined;
+    var stream = std.io.FixedBufferStream([]u8){ .buffer = &buf, .pos = 0 };
+    const network_size = try name.writeTo(stream.writer());
+
     // length + data + length + data + null
-    testing.expectEqual(@as(usize, 1 + 7 + 1 + 3 + 1), name.size());
+    try testing.expectEqual(@as(usize, 1 + 7 + 1 + 3 + 1), network_size);
+}
+
+test "resources have good sizes" {
+    var name_buffer: [10][]const u8 = undefined;
+    var name = try dns.Name.fromString("example.com", &name_buffer);
 
     var resource = dns.Resource{
         .name = name,
@@ -232,8 +227,15 @@ test "size() methods are good" {
         .opaque_rdata = "",
     };
 
+    var buf: [256]u8 = undefined;
+    var stream = std.io.FixedBufferStream([]u8){ .buffer = &buf, .pos = 0 };
+    const network_size = try resource.writeTo(stream.writer());
+
     // name + rr (2) + class (2) + ttl (4) + rdlength (2)
-    testing.expectEqual(@as(usize, name.size() + 10 + resource.opaque_rdata.len), resource.size());
+    try testing.expectEqual(
+        @as(usize, name.networkSize() + 10 + resource.opaque_rdata.len),
+        network_size,
+    );
 }
 
 // This is a known packet generated by zigdig. It would be welcome to have it

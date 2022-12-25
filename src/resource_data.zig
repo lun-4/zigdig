@@ -68,7 +68,7 @@ pub const ResourceData = union(Type) {
 
     const Self = @This();
 
-    pub fn size(self: Self) usize {
+    pub fn networkSize(self: Self) usize {
         return switch (self) {
             .A => 4,
             .AAAA => 16,
@@ -168,104 +168,94 @@ pub const ResourceData = union(Type) {
 
     /// Deserialize a given opaque resource data.
     pub fn fromOpaque(
-        ctx: *dns.DeserializationContext,
         typ: dns.ResourceType,
         opaque_resource_data: []const u8,
     ) !ResourceData {
         const BufferT = std.io.FixedBufferStream([]const u8);
         var stream = BufferT{ .buffer = opaque_resource_data, .pos = 0 };
-        const DeserializerT = std.io.Deserializer(.Big, .Bit, BufferT.Reader);
-        var deserializer = DeserializerT.init(stream.reader());
+        var reader = stream.reader();
 
         var rdata = switch (typ) {
             .A => blk: {
                 var ip4addr: [4]u8 = undefined;
-                for (ip4addr) |_, i| {
-                    ip4addr[i] = try deserializer.deserialize(u8);
-                }
-
+                _ = try reader.read(&ip4addr);
                 break :blk ResourceData{
                     .A = std.net.Address.initIp4(ip4addr, 0),
                 };
             },
             .AAAA => blk: {
                 var ip6_addr: [16]u8 = undefined;
-
-                for (ip6_addr) |byte, i| {
-                    _ = byte;
-                    ip6_addr[i] = try deserializer.deserialize(u8);
-                }
-
+                _ = try reader.read(&ip6_addr);
                 break :blk ResourceData{
                     .AAAA = std.net.Address.initIp6(ip6_addr, 0, 0, 0),
                 };
             },
 
-            .NS => ResourceData{ .NS = try dns.Packet.readName(&deserializer, ctx, try createNameBuffer(ctx), null) },
-            .CNAME => ResourceData{ .CNAME = try dns.Packet.readName(&deserializer, ctx, try createNameBuffer(ctx), null) },
-            .PTR => ResourceData{ .PTR = try dns.Packet.readName(&deserializer, ctx, try createNameBuffer(ctx), null) },
-            .MX => blk: {
-                break :blk ResourceData{
-                    .MX = MXData{
-                        .preference = try deserializer.deserialize(u16),
-                        .exchange = try dns.Packet.readName(&deserializer, ctx, try createNameBuffer(ctx), null),
-                    },
-                };
-            },
-            .MD => ResourceData{ .MD = try dns.Packet.readName(&deserializer, ctx, try createNameBuffer(ctx), null) },
-            .MF => ResourceData{ .MF = try dns.Packet.readName(&deserializer, ctx, try createNameBuffer(ctx), null) },
+            //.NS => ResourceData{ .NS = try dns.Packet.readName(&deserializer, ctx, try createNameBuffer(ctx), null) },
+            //.CNAME => ResourceData{ .CNAME = try dns.Packet.readName(&deserializer, ctx, try createNameBuffer(ctx), null) },
+            //.PTR => ResourceData{ .PTR = try dns.Packet.readName(&deserializer, ctx, try createNameBuffer(ctx), null) },
+            //.MX => blk: {
+            //    break :blk ResourceData{
+            //        .MX = MXData{
+            //            .preference = try deserializer.deserialize(u16),
+            //            .exchange = try dns.Packet.readName(&deserializer, ctx, try createNameBuffer(ctx), null),
+            //        },
+            //    };
+            //},
+            // .MD => ResourceData{ .MD = try dns.Packet.readName(&deserializer, ctx, try createNameBuffer(ctx), null) },
+            // .MF => ResourceData{ .MF = try dns.Packet.readName(&deserializer, ctx, try createNameBuffer(ctx), null) },
 
-            .SOA => blk: {
-                var mname = try dns.Packet.readName(&deserializer, ctx, try createNameBuffer(ctx), null);
-                var rname = try dns.Packet.readName(&deserializer, ctx, try createNameBuffer(ctx), null);
-                var serial = try deserializer.deserialize(u32);
-                var refresh = try deserializer.deserialize(u32);
-                var retry = try deserializer.deserialize(u32);
-                var expire = try deserializer.deserialize(u32);
-                var minimum = try deserializer.deserialize(u32);
+            // .SOA => blk: {
+            //     var mname = try dns.Packet.readName(&deserializer, ctx, try createNameBuffer(ctx), null);
+            //     var rname = try dns.Packet.readName(&deserializer, ctx, try createNameBuffer(ctx), null);
+            //     var serial = try deserializer.deserialize(u32);
+            //     var refresh = try deserializer.deserialize(u32);
+            //     var retry = try deserializer.deserialize(u32);
+            //     var expire = try deserializer.deserialize(u32);
+            //     var minimum = try deserializer.deserialize(u32);
 
-                break :blk ResourceData{
-                    .SOA = SOAData{
-                        .mname = mname,
-                        .rname = rname,
-                        .serial = serial,
-                        .refresh = refresh,
-                        .retry = retry,
-                        .expire = expire,
-                        .minimum = minimum,
-                    },
-                };
-            },
-            .SRV => blk: {
-                const priority = try deserializer.deserialize(u16);
-                const weight = try deserializer.deserialize(u16);
-                const port = try deserializer.deserialize(u16);
-                var target = try dns.Packet.readName(&deserializer, ctx, try createNameBuffer(ctx), null);
+            //     break :blk ResourceData{
+            //         .SOA = SOAData{
+            //             .mname = mname,
+            //             .rname = rname,
+            //             .serial = serial,
+            //             .refresh = refresh,
+            //             .retry = retry,
+            //             .expire = expire,
+            //             .minimum = minimum,
+            //         },
+            //     };
+            // },
+            // .SRV => blk: {
+            //     const priority = try deserializer.deserialize(u16);
+            //     const weight = try deserializer.deserialize(u16);
+            //     const port = try deserializer.deserialize(u16);
+            //     var target = try dns.Packet.readName(&deserializer, ctx, try createNameBuffer(ctx), null);
 
-                break :blk ResourceData{
-                    .SRV = .{
-                        .priority = priority,
-                        .weight = weight,
-                        .port = port,
-                        .target = target,
-                    },
-                };
-            },
-            .TXT => blk: {
-                var txt_buffer = try ctx.allocator.alloc(u8, 256);
-                try ctx.label_pool.append(txt_buffer);
+            //     break :blk ResourceData{
+            //         .SRV = .{
+            //             .priority = priority,
+            //             .weight = weight,
+            //             .port = port,
+            //             .target = target,
+            //         },
+            //     };
+            // },
+            // .TXT => blk: {
+            //     var txt_buffer = try ctx.allocator.alloc(u8, 256);
+            //     try ctx.label_pool.append(txt_buffer);
 
-                const length = try deserializer.deserialize(u8);
-                var idx: usize = 0;
-                while (idx < length) : (idx += 1) {
-                    txt_buffer[idx] = try deserializer.deserialize(u8);
-                }
+            //     const length = try deserializer.deserialize(u8);
+            //     var idx: usize = 0;
+            //     while (idx < length) : (idx += 1) {
+            //         txt_buffer[idx] = try deserializer.deserialize(u8);
+            //     }
 
-                break :blk ResourceData{ .TXT = txt_buffer[0..idx] };
-            },
+            //     break :blk ResourceData{ .TXT = txt_buffer[0..idx] };
+            // },
 
             else => {
-                std.debug.warn("unexpected rdata: {}\n", .{typ});
+                logger.warn("unexpected rdata: {}\n", .{typ});
                 return error.InvalidRData;
             },
         };
@@ -273,6 +263,8 @@ pub const ResourceData = union(Type) {
         return rdata;
     }
 };
+
+const logger = std.log.scoped(.dns_rdata);
 
 fn createNameBuffer(ctx: *dns.DeserializationContext) ![][]const u8 {
     // TODO should we just keep this hardcoded? how could we better manage those

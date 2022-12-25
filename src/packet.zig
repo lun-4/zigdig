@@ -393,7 +393,7 @@ pub const Packet = struct {
             //    name_index,
             //);
             //return LabelComponent{ .Pointer = name };
-            return error.TODO;
+            return error.TODO; // pointers...
         } else {
             // those must be 0
             std.debug.assert((!bit1) and (!bit2));
