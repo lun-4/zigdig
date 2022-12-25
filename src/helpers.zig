@@ -7,14 +7,15 @@ fn printList(writer: anytype, resource_list: []dns.Resource) !void {
     try writer.print(";;name\t\t\trrtype\tclass\tttl\trdata\n", .{});
 
     for (resource_list) |resource| {
-        var resource_data = try dns.ResourceData.fromOpaque(resource.typ, resource.opaque_rdata);
-        try writer.print("{}\t{}\t{}\t{}\t{}\n", .{
-            resource.name,
-            @tagName(resource.typ),
-            @tagName(resource.class),
-            resource.ttl,
-            resource_data,
-        });
+        _ = resource;
+        //var resource_data = try dns.ResourceData.fromOpaque(resource.typ, resource.opaque_rdata);
+        //try writer.print("{}\t{}\t{}\t{}\t{}\n", .{
+        //    resource.name,
+        //    @tagName(resource.typ),
+        //    @tagName(resource.class),
+        //    resource.ttl,
+        //    resource_data,
+        //});
     }
 
     try writer.print("\n", .{});
@@ -40,7 +41,7 @@ pub fn printAsZoneFile(packet: dns.Packet, writer: anytype) !void {
         try writer.print(";;name\ttype\tclass\n", .{});
 
         for (packet.questions) |question| {
-            try writer.print(";{}\t{}\t{}\n", .{
+            try writer.print(";{s}\t{s}\t{s}\n", .{
                 question.name,
                 @tagName(question.typ),
                 @tagName(question.class),
@@ -75,7 +76,7 @@ pub fn printAsZoneFile(packet: dns.Packet, writer: anytype) !void {
 pub fn randomHeaderId() u16 {
     const seed = @truncate(u64, @bitCast(u128, std.time.nanoTimestamp()));
     var r = std.rand.DefaultPrng.init(seed);
-    return r.random.int(u16);
+    return r.random().int(u16);
 }
 
 pub const DNSConnection = struct {
@@ -99,17 +100,17 @@ pub const DNSConnection = struct {
         const written_bytes = try packet.writeTo(stream.writer());
 
         var result = buffer[0..written_bytes];
-        const dest_len: u32 = switch (self.socket.address.any.family) {
-            std.os.AF_INET => @sizeOf(std.os.sockaddr_in),
-            std.os.AF_INET6 => @sizeOf(std.os.sockaddr_in6),
+        const dest_len: u32 = switch (self.address.any.family) {
+            std.os.AF.INET => @sizeOf(std.os.sockaddr.in),
+            std.os.AF.INET6 => @sizeOf(std.os.sockaddr.in6),
             else => unreachable,
         };
 
         _ = try std.os.sendto(
             self.socket.handle,
-            result.ptr,
-            written_bytes,
-            &self.socket.address.any,
+            result,
+            0,
+            &self.address.any,
             dest_len,
         );
     }
@@ -144,7 +145,7 @@ pub fn connectToSystemResolver() !DNSConnection {
 pub fn randomNameserver(output_buffer: []u8) !?[]const u8 {
     var file = try std.fs.cwd().openFile(
         "/etc/resolv.conf",
-        .{ .read = true, .write = false },
+        .{ .mode = .read_only },
     );
     defer file.close();
 
@@ -160,7 +161,7 @@ pub fn randomNameserver(output_buffer: []u8) !?[]const u8 {
     while (try file.reader().readUntilDelimiterOrEof(&line_buffer, '\n')) |line| {
         if (std.mem.startsWith(u8, line, "#")) continue;
 
-        var ns_it = std.mem.split(line, " ");
+        var ns_it = std.mem.split(u8, line, " ");
         const decl_name = ns_it.next();
         if (decl_name == null) continue;
 
@@ -171,7 +172,7 @@ pub fn randomNameserver(output_buffer: []u8) !?[]const u8 {
 
     const seed = @truncate(u64, @bitCast(u128, std.time.nanoTimestamp()));
     var r = std.rand.DefaultPrng.init(seed);
-    const selected = r.random.uintLessThan(usize, nameserver_amount);
+    const selected = r.random().uintLessThan(usize, nameserver_amount);
 
     try file.seekTo(0);
 
@@ -179,7 +180,7 @@ pub fn randomNameserver(output_buffer: []u8) !?[]const u8 {
     while (try file.reader().readUntilDelimiterOrEof(&line_buffer, '\n')) |line| {
         if (std.mem.startsWith(u8, line, "#")) continue;
 
-        var ns_it = std.mem.split(line, " ");
+        var ns_it = std.mem.split(u8, line, " ");
         const decl_name = ns_it.next();
         if (decl_name == null) continue;
 

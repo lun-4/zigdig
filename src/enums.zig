@@ -61,6 +61,11 @@ pub const ResourceType = enum(u16) {
 
         return error.InvalidResourceType;
     }
+
+    pub fn writeTo(self: @This(), writer: anytype) !usize {
+        try writer.writeIntBig(u16, @enumToInt(self));
+        return 16 / 8;
+    }
 };
 
 /// Represents a DNS class.
@@ -72,4 +77,9 @@ pub const ResourceClass = enum(u16) {
     CH = 3,
     HS = 4,
     WILDCARD = 255,
+
+    pub fn writeTo(self: @This(), writer: anytype) !usize {
+        try writer.writeIntBig(u16, @enumToInt(self));
+        return 16 / 8;
+    }
 };

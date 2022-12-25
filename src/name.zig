@@ -46,17 +46,23 @@ pub const Name = struct {
         return Self{ .labels = buffer[0..idx] };
     }
 
-    pub fn writeTo(self: Self, writer: anytype) !void {
+    pub fn writeTo(self: Self, writer: anytype) !usize {
+        var size: usize = 0;
         for (self.labels) |label| {
             std.debug.assert(label.len < 255);
-            try writer.write(@intCast(u8, label.len));
+
+            try writer.writeIntBig(u8, @intCast(u8, label.len));
+            size += 1;
+
             for (label) |byte| {
-                try writer.write(byte);
+                try writer.writeByte(byte);
+                size += 1;
             }
         }
 
         // null-octet for the end of labels for this name
-        try writer.write(@as(u8, 0));
+        try writer.writeByte(@as(u8, 0));
+        return size + 1;
     }
 
     /// Format the given DNS name.
@@ -70,7 +76,7 @@ pub const Name = struct {
         _ = options;
 
         for (self.labels) |label| {
-            try std.fmt.format(writer, "{}.", .{label});
+            try std.fmt.format(writer, "{s}.", .{label});
         }
     }
 };

@@ -4,11 +4,11 @@ const dns = @import("lib.zig");
 const logger = std.log.scoped(.zigdig_main);
 
 pub fn main() !void {
-    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
-    defer {
-        _ = gpa.deinit();
-    }
-    const allocator = gpa.allocator();
+    //var gpa = std.heap.GeneralPurposeAllocator(.{}){};
+    //defer {
+    //    _ = gpa.deinit();
+    //}
+    //const allocator = gpa.allocator();
 
     var args_it = std.process.args();
     _ = args_it.skip();
@@ -53,23 +53,24 @@ pub fn main() !void {
         .additionals = &[_]dns.Resource{},
     };
 
-    logger.debug("packet: {}\n", .{packet});
+    logger.debug("packet: {}", .{packet});
 
     const conn = try dns.helpers.connectToSystemResolver();
     defer conn.close();
 
-    std.debug.warn("selected nameserver: {}\n", .{conn.address});
+    logger.info("selected nameserver: {}\n", .{conn.address});
 
     try conn.sendPacket(packet);
 
-    const reply_packet = try conn.receivePacket(allocator);
-    defer reply_packet.deinit();
-    logger.info("reply: {}", .{reply_packet});
+    //const reply_packet = try conn.receivePacket(allocator, 4092);
+    //defer reply_packet.deinit();
+    //logger.info("reply: {}", .{reply_packet});
 
-    try std.testing.expectEqual(reply_packet.header.id == packet.header.id);
-    try std.testing.expect(reply_packet.header.is_response);
+    //try std.testing.expectEqual(reply_packet.header.id == packet.header.id);
+    //try std.testing.expect(reply_packet.header.is_response);
 
     const stdout = std.io.getStdOut();
 
     try dns.helpers.printAsZoneFile(packet, stdout.writer());
+    //try dns.helpers.printAsZoneFile(reply_packet, stdout.writer());
 }
