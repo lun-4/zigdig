@@ -24,7 +24,7 @@ pub const Header = packed struct {
     is_response: bool = false,
 
     /// TODO convert to enum
-    opcode: i4 = 0,
+    opcode: u4 = 0,
 
     /// Authoritative Answer flag
     /// Only valid in response packets. Specifies if the server
@@ -61,6 +61,57 @@ pub const Header = packed struct {
 
     /// Amount of additional records in the packet.
     additional_length: u16 = 0,
+
+    const Self = @This();
+
+    pub fn readFrom(byte_reader: anytype) !Self {
+        var self = Self{};
+
+        // turn incoming reader into a bitReader so that we can extract
+        // non-u8-aligned data from it
+        var reader = std.io.bitReader(.Big, byte_reader);
+
+        const fields = @typeInfo(Self).Struct.fields;
+        inline for (fields) |field| {
+            var out_bits: usize = undefined;
+            @field(self, field.name) = switch (field.type) {
+                bool => (try reader.readBits(u1, 1, &out_bits)) > 0,
+                u3 => try reader.readBits(u3, 3, &out_bits),
+                u4 => try reader.readBits(u4, 4, &out_bits),
+                ResponseCode => blk: {
+                    const tag_int = try reader.readBits(u4, 4, &out_bits);
+                    break :blk try std.meta.intToEnum(ResponseCode, tag_int);
+                },
+                u16 => try byte_reader.readIntBig(field.type),
+                else => @compileError(
+                    "unsupported type on header " ++ @typeName(field.type),
+                ),
+            };
+        }
+        return self;
+    }
+
+    pub fn writeTo(self: Self, byte_writer: anytype) !usize {
+        var writer = std.io.bitWriter(.Big, byte_writer);
+
+        const fields = @typeInfo(Self).Struct.fields;
+        inline for (fields) |field| {
+            const value = @field(self, field.name);
+            switch (field.type) {
+                bool => try writer.writeBits(@as(u1, if (value) 1 else 0), 1),
+                u3 => try writer.writeBits(value, 3),
+                u4 => try writer.writeBits(value, 4),
+                ResponseCode => try writer.writeBits(@enumToInt(value), 4),
+                u16 => try writer.writeBits(value, 16),
+                else => @compileError(
+                    "unsupported type on header " ++ @typeName(field.type),
+                ),
+            }
+        }
+
+        try writer.flushBits();
+        return 3; // TODO make this dynamic on amount given to bitwriter
+    }
 };
 
 pub const Question = struct {
@@ -154,7 +205,10 @@ fn WrapperReader(comptime ReaderType: anytype) type {
 
         const Self = @This();
 
-        pub fn init(underlying_reader: ReaderType, ctx: *DeserializationContext) Self {
+        pub fn init(
+            underlying_reader: ReaderType,
+            ctx: *DeserializationContext,
+        ) Self {
             return .{
                 .underlying_reader = underlying_reader,
                 .ctx = ctx,
@@ -199,8 +253,7 @@ pub const Packet = struct {
         std.debug.assert(self.header.nameserver_length == self.nameservers.len);
         std.debug.assert(self.header.additional_length == self.additionals.len);
 
-        const header_size = @sizeOf(Header);
-        try writer.writeStruct(self.header);
+        const header_size = try self.header.writeTo(writer);
 
         var question_size: usize = 0;
 
@@ -216,7 +269,8 @@ pub const Packet = struct {
         const nameservers_size = try Self.writeResourceListTo(self.nameservers, writer);
         const additionals_size = try Self.writeResourceListTo(self.additionals, writer);
 
-        return header_size + question_size + answers_size + nameservers_size + additionals_size;
+        return header_size + question_size +
+            answers_size + nameservers_size + additionals_size;
     }
 
     fn unfoldPointer(
@@ -297,13 +351,11 @@ pub const Packet = struct {
 
     /// Deserialize a LabelComponent, which can be:
     ///  - a pointer
-    ///  - a label
+    ///  - a full label ([]const u8)
     ///  - a null octet
-    fn readLabel(
-        deserializer: anytype,
-        ctx: *DeserializationContext,
-        name_buffer: [][]const u8,
-        name_index: usize,
+    fn readLabelComponent(
+        reader: anytype,
+        allocator: std.mem.Allocator,
     ) !LabelComponent {
         // pointers, in the binary representation of a byte, are as follows
         //  1 1 B B B B B B | B B B B B B B B
@@ -321,7 +373,7 @@ pub const Packet = struct {
         // length can only be a single byte.
         //
         // if the length is 0, its a null octet
-        var possible_length = try deserializer.deserialize(u8);
+        var possible_length = try reader.readIntBig(u8);
         if (possible_length == 0) return LabelComponent{ .Null = {} };
 
         // RFC1035:
@@ -333,41 +385,38 @@ pub const Packet = struct {
 
         if (bit1 and bit2) {
             // its a pointer!
-            var name = try Self.unfoldPointer(
-                possible_length,
-                deserializer,
-                ctx,
-                name_buffer,
-                name_index,
-            );
-            return LabelComponent{ .Pointer = name };
+            //var name = try Self.unfoldPointer(
+            //    possible_length,
+            //    deserializer,
+            //    ctx,
+            //    name_buffer,
+            //    name_index,
+            //);
+            //return LabelComponent{ .Pointer = name };
+            return error.TODO;
         } else {
             // those must be 0
             std.debug.assert((!bit1) and (!bit2));
 
             // the next <possible_length> bytes contain a full label.
-            //
-            // we use the label pool so we can give a bigger lifetime
-            var label = try ctx.newLabel(possible_length);
-
-            var index: usize = 0;
-            while (index < possible_length) : (index += 1) {
-                label[index] = try deserializer.deserialize(u8);
-            }
-
+            var label = try allocator.alloc(u8, possible_length);
+            const read_bytes = try reader.read(label);
+            std.debug.assert(read_bytes == label.len);
             return LabelComponent{ .Full = label };
         }
     }
 
-    /// Deserializes a DNS Name
-    pub fn readName(
-        deserializer: anytype,
-        ctx: *DeserializationContext,
-        name_buffer: [][]const u8,
-        name_index: ?usize,
-    ) !Name {
-        var buffer_index: usize = name_index orelse 0;
+    const ReadNameOptions = struct {
+        max_label_count: usize = 128,
+    };
 
+    fn readName(
+        self: Self,
+        reader: anytype,
+        allocator: std.mem.Allocator,
+        options: ReadNameOptions,
+    ) !Name {
+        _ = self;
         // RFC1035, 4.1.4 Message Compression:
         // The compression scheme allows a domain name in a message to be
         // represented as either:
@@ -376,84 +425,67 @@ pub const Packet = struct {
         //    - a pointer
         //    - a sequence of labels ending with a pointer
         //
-        // ==
-        //
-        // All three of those must end in some way of
-        // 	name_buffer[buffer_index] = something;
-        // since thats where our result will go.
 
-        // keep attempting to get labels off the deserializer and
-        // filling the name_buffer.
-        //
-        // if it ends in 0, be done
-        // if its a pointer, follow pointer
-        // if it ends in a pointer, follow pointer
-        // else, fill label
+        // process incoming components (FullLabel, PointerToLabel, Null) from reader
+
+        var name_buffer = std.ArrayList([]const u8).init(allocator);
+        defer name_buffer.deinit();
 
         while (true) {
-            var component: LabelComponent = try Self.readLabel(deserializer, ctx, name_buffer, buffer_index);
+            if (name_buffer.items.len > options.max_label_count)
+                return error.Overflow;
+
+            const component = try Self.readLabelComponent(reader, allocator);
             switch (component) {
-                .Full => |label| {
-                    name_buffer[buffer_index] = label;
-                    buffer_index += 1;
+                .Full => |label| try name_buffer.append(label),
+                .Pointer => |pointer| {
+                    _ = pointer;
+                    return error.TODO;
+                    //const label = try self.resolveLabelPointer(pointer);
+                    //try name_buffer.append(label);
                 },
-                .Pointer => |name| return name,
                 .Null => break,
             }
         }
 
-        return Name{ .labels = name_buffer[0..(buffer_index)] };
+        return Name{ .labels = try name_buffer.toOwnedSlice() };
     }
 
-    /// (almost) Deserialize an RDATA section. This only deserializes to a slice of u8.
-    /// Parsing of RDATA sections are in their own dns.rdata module.
-    fn deserializeRData(
-        self: *Self,
-        deserializer: anytype,
-        ctx: *DeserializationContext,
+    /// Extract an RDATA. This only spits out a slice of u8.
+    /// Parsing of RDATA sections are in the dns.rdata module.
+    ///
+    /// Caller owns returned memory.
+    fn readResourceDataFrom(
+        reader: anytype,
+        allocator: std.mem.Allocator,
     ) ![]const u8 {
-        _ = self;
-        var rdata_length = try deserializer.deserialize(u16);
-        var opaque_rdata = try ctx.allocator.alloc(u8, rdata_length);
-
-        // TODO create dedicated pool for this?
-        try ctx.label_pool.append(opaque_rdata);
-
-        var i: u16 = 0;
-        while (i < rdata_length) : (i += 1) {
-            opaque_rdata[i] = try deserializer.deserialize(u8);
-        }
-
+        const rdata_length = try reader.readIntBig(u16);
+        var opaque_rdata = try allocator.alloc(u8, rdata_length);
+        const read_bytes = try reader.read(opaque_rdata);
+        std.debug.assert(read_bytes == opaque_rdata.len);
         return opaque_rdata;
     }
 
-    fn deserializeResourceList(
-        self: *Self,
-        deserializer: anytype,
-        ctx: *DeserializationContext,
-        length: usize,
-        resource_list: *[]Resource,
-    ) !void {
-        var list = std.ArrayList(Resource).init(ctx.allocator);
+    fn readResourceListFrom(
+        self: Self,
+        reader: anytype,
+        allocator: std.mem.Allocator,
+        resource_count: usize,
+    ) ![]Resource {
+        var list = std.ArrayList(Resource).init(allocator);
 
         var i: usize = 0;
-        while (i < length) : (i += 1) {
-            // TODO name buffer stuff
-            var name_buffer = try ctx.allocator.alloc([]u8, 128);
-            try ctx.name_pool.append(name_buffer);
-
-            var name = try Self.readName(deserializer, ctx, name_buffer, null);
-            var typ = try deserializer.deserialize(u16);
-            var class = try deserializer.deserialize(u16);
-            var ttl = try deserializer.deserialize(i32);
-
-            // rdlength and rdata are under deserializeRData
-            var opaque_rdata = try self.deserializeRData(deserializer, ctx);
+        while (i < resource_count) : (i += 1) {
+            var name = try self.readName(reader, allocator, .{});
+            var typ = try reader.readEnum(ResourceType, .Big);
+            var class = try reader.readEnum(ResourceClass, .Big);
+            var ttl = try reader.readIntBig(i32);
+            var opaque_rdata = try Self.readResourceDataFrom(reader, allocator);
 
             var resource = Resource{
                 .name = name,
-                .typ = try std.meta.intToEnum(ResourceType, typ),
-                .class = try std.meta.intToEnum(ResourceClass, class),
+                .typ = typ,
+                .class = class,
                 .ttl = ttl,
                 .opaque_rdata = opaque_rdata,
             };
@@ -461,47 +493,74 @@ pub const Packet = struct {
             try list.append(resource);
         }
 
-        resource_list.* = list.items;
+        return try list.toOwnedSlice();
     }
 
-    pub fn readInto(
-        self: *Self,
-        upstream_reader: anytype,
-        ctx: *DeserializationContext,
-    ) !void {
-        const WrapperReaderType = WrapperReader(@TypeOf(upstream_reader));
-        var wrapper_reader = WrapperReaderType.init(upstream_reader, ctx);
-        var reader = wrapper_reader.reader();
+    pub fn readFrom(
+        reader: anytype,
+        allocator: std.mem.Allocator,
+    ) !IncomingPacket {
+        // TODO endianess on Header
+        var packet = try allocator.create(Self);
+        errdefer allocator.destroy(packet);
 
-        const DeserializerType = std.io.Deserializer(.Big, .Bit, @TypeOf(reader));
-        var deserializer = DeserializerType.init(reader);
-        self.header = try deserializer.deserialize(Header);
+        packet.header = try Header.readFrom(reader);
 
-        var questions = std.ArrayList(Question).init(ctx.allocator);
+        var questions = std.ArrayList(Question).init(allocator);
 
         var i: usize = 0;
-        while (i < self.header.question_length) {
-            var name_buffer = try ctx.allocator.alloc([]u8, 128);
-            try ctx.name_pool.append(name_buffer);
-
-            var name = try Self.readName(&deserializer, ctx, name_buffer, null);
-            var qtype = try deserializer.deserialize(u16);
-            var qclass = try deserializer.deserialize(u16);
+        while (i < packet.header.question_length) {
+            var name = try packet.readName(reader, allocator, .{});
+            var qtype = try reader.readEnum(ResourceType, .Big);
+            var qclass = try reader.readEnum(ResourceClass, .Big);
 
             var question = Question{
                 .name = name,
-                .typ = try std.meta.intToEnum(ResourceType, qtype),
-                .class = try std.meta.intToEnum(ResourceClass, qclass),
+                .typ = qtype,
+                .class = qclass,
             };
 
             try questions.append(question);
             i += 1;
         }
 
-        self.questions = questions.items;
+        packet.questions = try questions.toOwnedSlice();
+        packet.answers = try packet.readResourceListFrom(
+            reader,
+            allocator,
+            packet.header.answer_length,
+        );
+        packet.nameservers = try packet.readResourceListFrom(
+            reader,
+            allocator,
+            packet.header.nameserver_length,
+        );
+        packet.additionals = try packet.readResourceListFrom(
+            reader,
+            allocator,
+            packet.header.additional_length,
+        );
 
-        try self.deserializeResourceList(&deserializer, ctx, self.header.answer_length, &self.answers);
-        try self.deserializeResourceList(&deserializer, ctx, self.header.nameserver_length, &self.nameservers);
-        try self.deserializeResourceList(&deserializer, ctx, self.header.additional_length, &self.additionals);
+        return IncomingPacket{ .packet = packet, .allocator = allocator };
+    }
+};
+
+pub const IncomingPacket = struct {
+    allocator: std.mem.Allocator,
+    packet: *Packet,
+
+    fn freeResource(self: @This(), resource: Resource) void {
+        self.allocator.free(resource.name.labels);
+        self.allocator.free(resource.opaque_rdata);
+    }
+
+    pub fn deinit(self: @This()) void {
+        for (self.packet.questions) |question| {
+            self.allocator.free(question.name.labels);
+        }
+        for (self.packet.answers) |resource| self.freeResource(resource);
+        for (self.packet.nameservers) |resource| self.freeResource(resource);
+        for (self.packet.additionals) |resource| self.freeResource(resource);
+        self.allocator.destroy(self.packet);
     }
 };

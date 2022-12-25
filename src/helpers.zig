@@ -115,15 +115,22 @@ pub const DNSConnection = struct {
         );
     }
 
-    pub fn receivePacket(self: Self, allocator: std.mem.Allocator, max_size: usize) !dns.IncomingPacket {
-        var packet_buffer: [max_size]u8 = undefined;
+    pub fn receivePacket(
+        self: Self,
+        packet_allocator: std.mem.Allocator,
+        comptime max_incoming_message_size: usize,
+    ) !dns.IncomingPacket {
+        var packet_buffer: [max_incoming_message_size]u8 = undefined;
         const read_bytes = try self.socket.read(&packet_buffer);
         const packet_bytes = packet_buffer[0..read_bytes];
+        logger.debug("read {d} bytes", .{read_bytes});
 
         var stream = std.io.FixedBufferStream([]const u8){ .buffer = packet_bytes, .pos = 0 };
-        return try dns.Packet.readFrom(stream.reader(), allocator);
+        return try dns.Packet.readFrom(stream.reader(), packet_allocator);
     }
 };
+
+const logger = std.log.scoped(.dns_helpers);
 
 /// Open a socket to a random DNS resolver declared in the systems'
 /// "/etc/resolv.conf" file.

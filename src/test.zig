@@ -31,14 +31,7 @@ const TEST_PKT_RESPONSE = "RM2BgAABAAEAAAAABmdvb2dsZQNjb20AAAEAAcAMAAEAAQAAASwAB
 const GOOGLE_COM_LABELS = [_][]const u8{ "google"[0..], "com"[0..] };
 
 test "Packet serialize/deserialize" {
-    if (true) {
-        return error.SkipZigTest;
-    }
-
-    const seed = @truncate(u64, @bitCast(u128, std.time.nanoTimestamp()));
-    var r = std.rand.DefaultPrng.init(seed);
-
-    const random_id = r.random.int(u16);
+    const random_id = dns.helpers.randomHeaderId();
     var packet = dns.Packet{
         .header = .{ .id = random_id },
         .questions = &[_]dns.Question{},
@@ -56,7 +49,7 @@ test "Packet serialize/deserialize" {
     var workmem: [5000]u8 = undefined;
     var deserialized = try deserialTest(buf, &workmem);
 
-    testing.expectEqual(deserialized.header.id, packet.header.id);
+    try std.testing.expectEqual(deserialized.header.id, packet.header.id);
 
     const fields = [_][]const u8{ "id", "opcode", "question_length", "answer_length" };
 
@@ -64,7 +57,10 @@ test "Packet serialize/deserialize" {
     var header = packet.header;
 
     inline for (fields) |field| {
-        testing.expectEqual(@field(new_header, field), @field(header, field));
+        try std.testing.expectEqual(
+            @field(new_header, field),
+            @field(header, field),
+        );
     }
 }
 
@@ -188,7 +184,9 @@ test "serialization of google.com/A (question)" {
     var encode_buffer: [256]u8 = undefined;
     var write_buffer: [256]u8 = undefined;
     var encoded = try encodePacket(packet, &encode_buffer, &write_buffer);
-    try std.testing.expectEqualSlices(u8, encoded, TEST_PKT_QUERY);
+    const logger = std.log.scoped(.sex);
+    logger.warn("encoded: {s}", .{encoded});
+    try std.testing.expectEqualSlices(u8, TEST_PKT_QUERY, encoded);
 }
 
 fn serialTest(packet: Packet, write_buffer: []u8) ![]u8 {
@@ -196,26 +194,19 @@ fn serialTest(packet: Packet, write_buffer: []u8) ![]u8 {
     var stream = typ{ .buffer = write_buffer, .pos = 0 };
 
     _ = try packet.writeTo(stream.writer());
+    const written_data = stream.getWritten();
+    //std.debug.assert(written_data.len == written_bytes);
 
-    return stream.getWritten();
+    return written_data;
 }
 
 const FixedStream = std.io.FixedBufferStream([]const u8);
 fn deserialTest(buf: []const u8, work_memory: []u8) !Packet {
     var stream = FixedStream{ .buffer = buf, .pos = 0 };
     var fba = std.heap.FixedBufferAllocator.init(work_memory);
-    var ctx = dns.DeserializationContext.init(&fba.allocator);
 
-    var pkt = dns.Packet{
-        .header = .{},
-        .questions = &[_]dns.Question{},
-        .answers = &[_]dns.Resource{},
-        .nameservers = &[_]dns.Resource{},
-        .additionals = &[_]dns.Resource{},
-    };
-    try pkt.readInto(stream.reader(), &ctx);
-
-    return pkt;
+    const incoming = try dns.Packet.readFrom(stream.reader(), fba.allocator());
+    return incoming.packet.*;
 }
 
 test "convert string to dns type" {
