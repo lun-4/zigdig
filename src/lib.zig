@@ -6,3 +6,6 @@ pub const Packet = pkt.Packet;
 pub const Question = pkt.Question;
 pub const Resource = pkt.Resource;
 pub const helpers = @import("helpers.zig");
+
+const resource_data = @import("resource_data.zig");
+pub const ResourceData = resource_data.ResourceData;
