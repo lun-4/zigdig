@@ -74,3 +74,8 @@ pub fn main() !void {
     try dns.helpers.printAsZoneFile(packet, stdout.writer());
     //try dns.helpers.printAsZoneFile(reply_packet, stdout.writer());
 }
+
+test "awooga" {
+    std.testing.refAllDecls(@This());
+    std.testing.refAllDecls(@import("test.zig"));
+}

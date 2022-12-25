@@ -30,7 +30,7 @@ pub fn build(b: *Builder) void {
     lib.setTarget(target);
     lib.setBuildMode(mode);
 
-    var lib_tests = b.addTest("src/pkg2/dns.zig");
+    var lib_tests = b.addTest("src/main.zig");
     lib_tests.setBuildMode(mode);
 
     const test_step = b.step("test", "Run library tests");
