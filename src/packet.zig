@@ -10,10 +10,18 @@ const logger = std.log.scoped(.dns_packet);
 pub const ResponseCode = enum(u4) {
     NoError = 0,
     FormatError = 1,
-    ServFail = 2,
+    ServerFailure = 2,
     NameError = 3,
     NotImplemented = 4,
     Refused = 5,
+};
+
+const OpCode = enum(u4) {
+    Query = 0,
+    InverseQuery = 1,
+    ServerStatusRequest = 2,
+
+    // rest is unused as per RFC1035
 };
 
 /// Describes the header of a DNS packet.
@@ -25,8 +33,8 @@ pub const Header = packed struct {
     /// Defines if this is a response packet or not.
     is_response: bool = false,
 
-    /// TODO convert to enum
-    opcode: u4 = 0,
+    /// specifies kind of query in this message.
+    opcode: OpCode = .Query,
 
     /// Authoritative Answer flag
     /// Only valid in response packets. Specifies if the server
@@ -80,9 +88,9 @@ pub const Header = packed struct {
                 bool => (try reader.readBits(u1, 1, &out_bits)) > 0,
                 u3 => try reader.readBits(u3, 3, &out_bits),
                 u4 => try reader.readBits(u4, 4, &out_bits),
-                ResponseCode => blk: {
+                OpCode, ResponseCode => blk: {
                     const tag_int = try reader.readBits(u4, 4, &out_bits);
-                    break :blk try std.meta.intToEnum(ResponseCode, tag_int);
+                    break :blk try std.meta.intToEnum(field.type, tag_int);
                 },
                 u16 => try byte_reader.readIntBig(field.type),
                 else => @compileError(
@@ -106,7 +114,7 @@ pub const Header = packed struct {
                 bool => try writer.writeBits(@as(u1, if (value) 1 else 0), 1),
                 u3 => try writer.writeBits(value, 3),
                 u4 => try writer.writeBits(value, 4),
-                ResponseCode => try writer.writeBits(@enumToInt(value), 4),
+                OpCode, ResponseCode => try writer.writeBits(@enumToInt(value), 4),
                 u16 => try writer.writeBits(value, 16),
                 else => @compileError(
                     "unsupported type on header " ++ @typeName(field.type),
@@ -590,6 +598,7 @@ pub const Packet = struct {
     }
 };
 
+/// Represents a Packet where all of its data was allocated dynamically
 pub const IncomingPacket = struct {
     allocator: std.mem.Allocator,
     packet: *Packet,
