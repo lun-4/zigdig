@@ -512,6 +512,7 @@ pub const Packet = struct {
         resource_count: usize,
     ) ![]Resource {
         var list = std.ArrayList(Resource).init(allocator);
+        defer list.deinit();
 
         var i: usize = 0;
         while (i < resource_count) : (i += 1) {
@@ -550,6 +551,7 @@ pub const Packet = struct {
         packet.header = try Header.readFrom(reader);
 
         var questions = std.ArrayList(Question).init(allocator);
+        defer questions.deinit();
 
         var i: usize = 0;
         while (i < packet.header.question_length) {
@@ -598,14 +600,21 @@ pub const IncomingPacket = struct {
         self.allocator.free(resource.opaque_rdata);
     }
 
+    fn freeResourceList(self: @This(), resource_list: []Resource) void {
+        for (resource_list) |resource| self.freeResource(resource);
+        self.allocator.free(resource_list);
+    }
+
     pub fn deinit(self: @This()) void {
         for (self.packet.questions) |question| {
             for (question.name.labels) |label| self.allocator.free(label);
             self.allocator.free(question.name.labels);
         }
-        for (self.packet.answers) |resource| self.freeResource(resource);
-        for (self.packet.nameservers) |resource| self.freeResource(resource);
-        for (self.packet.additionals) |resource| self.freeResource(resource);
+        self.allocator.free(self.packet.questions);
+
+        self.freeResourceList(self.packet.answers);
+        self.freeResourceList(self.packet.nameservers);
+        self.freeResourceList(self.packet.additionals);
         self.allocator.destroy(self.packet);
     }
 };
