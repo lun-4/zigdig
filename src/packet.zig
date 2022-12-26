@@ -5,6 +5,8 @@ const Name = dns.Name;
 const ResourceType = dns.ResourceType;
 const ResourceClass = dns.ResourceClass;
 
+const logger = std.log.scoped(.dns_packet);
+
 pub const ResponseCode = enum(u4) {
     NoError = 0,
     FormatError = 1,
@@ -94,9 +96,12 @@ pub const Header = packed struct {
     pub fn writeTo(self: Self, byte_writer: anytype) !usize {
         var writer = std.io.bitWriter(.Big, byte_writer);
 
+        var written_bits: usize = 0;
+
         const fields = @typeInfo(Self).Struct.fields;
         inline for (fields) |field| {
             const value = @field(self, field.name);
+            written_bits += @bitSizeOf(field.type);
             switch (field.type) {
                 bool => try writer.writeBits(@as(u1, if (value) 1 else 0), 1),
                 u3 => try writer.writeBits(value, 3),
@@ -110,7 +115,9 @@ pub const Header = packed struct {
         }
 
         try writer.flushBits();
-        return 3; // TODO make this dynamic on amount given to bitwriter
+        const written_bytes = written_bits / 8;
+        std.debug.assert(written_bytes == 12);
+        return written_bytes;
     }
 };
 
@@ -268,6 +275,11 @@ pub const Packet = struct {
         const answers_size = try Self.writeResourceListTo(self.answers, writer);
         const nameservers_size = try Self.writeResourceListTo(self.nameservers, writer);
         const additionals_size = try Self.writeResourceListTo(self.additionals, writer);
+
+        logger.debug(
+            "header = {d}, question_size = {d}, answers_size = {d}, nameservers_size = {d}, additionals_size = {d}",
+            .{ header_size, question_size, answers_size, nameservers_size, additionals_size },
+        );
 
         return header_size + question_size +
             answers_size + nameservers_size + additionals_size;
