@@ -164,10 +164,21 @@ pub const DeserializationContext = struct {
 
 const LabelComponent = union(enum) {
     Full: []const u8,
+    /// Holds the first offset component of that pointer.
+    ///
+    /// You still have to read a byte for the second component and assemble
+    /// it into the final packet offset.
     Pointer: u8,
     Null: void,
 };
 
+/// Wrap a Reader with a type that contains a DeserializationContext.
+///
+/// Automatically increments the DeserializationContext's current_byte_count
+/// on every read().
+///
+/// Useful to hold deserialization state without having to pass an entire
+/// parameter around on every single helper function.
 fn WrapperReader(comptime ReaderType: anytype) type {
     return struct {
         underlying_reader: ReaderType,
@@ -199,6 +210,7 @@ fn WrapperReader(comptime ReaderType: anytype) type {
     };
 }
 
+/// A DNS packet, as specified in RFC1035.
 pub const Packet = struct {
     header: Header,
     questions: []Question,
@@ -216,6 +228,7 @@ pub const Packet = struct {
         return size;
     }
 
+    /// Write the network representation of this packet into a Writer.
     pub fn writeTo(self: Self, writer: anytype) !usize {
         std.debug.assert(self.header.question_length == self.questions.len);
         std.debug.assert(self.header.answer_length == self.answers.len);
@@ -283,9 +296,29 @@ pub const Packet = struct {
         // - this means walk (current_byte_count - offset) bytes inside of the
         //    Name's labels, and create a new one from the pre-existing memory.
         //
-        // make sure to dupe() this memory or else we'll have double-free cases
+        // make sure to dupe() the memory we get from a pre-existing label
+        // or else we'll have double-free issues on IncomingPacket.deinit()
+        //
+        // the old implementation was recursive as pointers can point to other
+        // pointers. this one does not have this issue as all pointers are
+        // unfolded, and we use the unfolded results to unfold another
+        // pointer.
+        //
+        // it also required holding the entire packet's bytes in memory, so
+        // this new one has less memory usage as well, though it still requires
+        // allocation.
+        //
+        // deserialization without allocation is hard as we need to take
+        // a dynamic amount of bytes out of the Reader, HOWEVER, as we know
+        // labels are 63 octets or less, we could create a Label struct
+        // that has [63]u8 and a length pointer, so it can be safely operated
+        // on in the stack.
+        //
+        // that also applies to names themselves, as they can have a maximum
+        // size held on the stack.
 
-        const fields_with_resources = .{ "questions", "answers", "nameservers", "additionals" };
+        const fields_with_resources =
+            .{ "questions", "answers", "nameservers", "additionals" };
 
         var maybe_referenced_name: ?dns.Name = null;
 
@@ -294,7 +327,8 @@ pub const Packet = struct {
             for (resource_list) |resource| {
                 const name = resource.name;
                 comptime std.debug.assert(@TypeOf(name) == dns.Name);
-                const packet_index = if (name.packet_index) |idx| idx else continue;
+                const packet_index =
+                    if (name.packet_index) |idx| idx else continue;
 
                 const start_index = packet_index;
                 var name_length: usize = 0;
@@ -343,82 +377,6 @@ pub const Packet = struct {
         }
     }
 
-    fn unfoldPointer(
-        first_offset_component: u8,
-        deserializer: anytype,
-        ctx: *DeserializationContext,
-        /// Buffer that holds the memory for the dns name
-        name_buffer: [][]const u8,
-        name_index: usize,
-    ) anyerror!Name {
-        // we need to read another u8 and merge both that and first_offset_component
-        // into a u16 we can use as an offset in the entire packet, etc.
-
-        // the final offset is actually 14 bits, the first two are identification
-        // of the offset itself.
-        const second_offset_component = try deserializer.deserialize(u8);
-
-        // merge them together
-        var offset: u16 = (first_offset_component << 7) | second_offset_component;
-
-        // set first two bits of ptr_offset to zero as they're the
-        // pointer prefix bits (which are always 1, which brings problems)
-        offset &= ~@as(u16, 1 << 15);
-        offset &= ~@as(u16, 1 << 14);
-
-        // RFC1035 says:
-        //
-        // The OFFSET field specifies an offset from
-        // the start of the message (i.e., the first octet of the ID field in the
-        // domain header).  A zero offset specifies the first byte of the ID field,
-        // etc.
-
-        // this mechanism requires us to hold the entire packet in memory
-        //
-        // one guarantee we have is that pointers can't reference packet
-        // offsets in the past (oh than god that makes *some* sense!)
-
-        // to make this work with nicer safety guarantees, we slice the
-        // packet bytes we know of, starting on that offset, and ending in the
-        // first zero octet we find.
-        //
-        // if offset is X,
-        // then our slice starts at X and ends at X+n, as follows:
-        //
-        // ... [      0] ...
-        //     |      |
-        //     X      X+n
-        //
-        // we just need to calculate n by using indexOf to find the null octet
-        //
-        // TODO a way to hold the memory we deserialized, maybe a custom
-        // wrapper Reader that allocates and stores the bytes it read? i think
-        // we already have that kind of thing in std, but i need more time
-        var offset_size_opt = std.mem.indexOf(u8, ctx.packet_list.items[offset..], "\x00");
-        if (offset_size_opt == null) return error.ParseFail;
-        var offset_size = offset_size_opt.?;
-
-        // from our slice, we need to read a name from it. we do it via
-        // creating a FixedBufferStream, extracting a reader from it, creating
-        // a deserializer, and feeding that to readName.
-        const label_data = ctx.packet_list.items[offset .. offset + (offset_size + 1)];
-
-        const T = std.io.FixedBufferStream([]const u8);
-        const InnerDeserializer = std.io.Deserializer(.Big, .Bit, T.Reader);
-
-        var stream = T{
-            .buffer = label_data,
-            .pos = 0,
-        };
-
-        var new_deserializer = InnerDeserializer.init(stream.reader());
-
-        // TODO: no name buffer available here. i think we can create a
-        // NameDeserializationContext which holds both the name buffer AND
-        // the index so we could keep appending new labels to it
-        return Self.readName(&new_deserializer, ctx, name_buffer, name_index);
-    }
-
     /// Deserialize a LabelComponent, which can be:
     ///  - a pointer
     ///  - a full label ([]const u8)
@@ -435,7 +393,7 @@ pub const Packet = struct {
         // then you read the rest, and turn it into an offset (without the
         // starting bits!!!)
         //
-        // to prevent inefficiencies, we just read a single bite, see if it
+        // to prevent inefficiencies, we just read a single byte, see if it
         // has the starting bits, and then we chop it off, merging with the
         // next byte. pointer offsets are 14 bits long
         //
@@ -456,7 +414,7 @@ pub const Packet = struct {
         if (bit1 and bit2) {
             return LabelComponent{ .Pointer = possible_length };
         } else {
-            // those must be 0
+            // those must be 0 for a correct label length to be made
             std.debug.assert((!bit1) and (!bit2));
 
             // the next <possible_length> bytes contain a full label.
@@ -486,7 +444,8 @@ pub const Packet = struct {
         //    - a sequence of labels ending with a pointer
         //
 
-        // process incoming components (FullLabel, PointerToLabel, Null) from reader
+        // To do that, we read incoming "components" and resolve pointers
+        // when we find them, adding them into a final name_buffer
 
         var name_buffer = std.ArrayList([]const u8).init(allocator);
         defer name_buffer.deinit();
@@ -501,10 +460,23 @@ pub const Packet = struct {
             switch (component) {
                 .Full => |label| try name_buffer.append(label),
                 .Pointer => |first_offset_component| {
-                    const labels = try self.resolvePointer(reader, first_offset_component, allocator);
+                    // as pointers are the end of a name, but they can appear
+                    // after N Full labels, we need to copy the label array
+                    // we allocated in resolvePointer() back to name_buffer.
+                    //
+                    // the old implementation just returned the full name, and
+                    // required way more inner context for that to happen.
+                    //
+                    // and then we can break the loop, as that is the end of
+                    // the DNS name
+
+                    const labels = try self.resolvePointer(
+                        reader,
+                        first_offset_component,
+                        allocator,
+                    );
                     defer allocator.free(labels);
 
-                    // copy referenced labels to name_buffer
                     for (labels) |label| try name_buffer.append(label);
                     break;
                 },
