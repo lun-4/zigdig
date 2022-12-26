@@ -2,6 +2,7 @@ const Builder = std.build.Builder;
 const std = @import("std");
 pub fn build(b: *Builder) void {
     const native_opt = b.option(bool, "native", "if many cpu, turn this on");
+    const option_libc = (b.option(bool, "libc", "build with libc?")) orelse false;
     const is_native = native_opt orelse true;
 
     var target: std.zig.CrossTarget = undefined;
@@ -25,6 +26,7 @@ pub fn build(b: *Builder) void {
     const exe = b.addExecutable("zigdig", "src/main.zig");
     exe.setTarget(target);
     exe.setBuildMode(mode);
+    if (option_libc) exe.linkLibC();
 
     const lib = b.addStaticLibrary("zigdig", "src/lib.zig");
     lib.setTarget(target);
