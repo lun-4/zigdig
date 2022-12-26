@@ -179,10 +179,8 @@ pub const ResourceData = union(Type) {
                 soa_data.mname.deinit(allocator);
                 soa_data.rname.deinit(allocator);
             },
-
-            .MX => |mxdata| {
-                mxdata.exchange.deinit(allocator);
-            },
+            .MX => |mxdata| mxdata.exchange.deinit(allocator),
+            .SRV => |srv| srv.target.deinit(allocator),
             .TXT => |data| allocator.free(data),
             else => {},
         }
