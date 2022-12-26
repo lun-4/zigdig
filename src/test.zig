@@ -238,27 +238,16 @@ test "resources have good sizes" {
 const PACKET_WITH_RDATA = "FEUBIAAAAAEAAAAABmdvb2dsZQNjb20AAAEAAQAAASwABAEAAH8=";
 
 test "rdata serialization" {
-    if (true) {
-        return error.SkipZigTest;
-    }
-
     var name_buffer: [2][]const u8 = undefined;
     var name = try dns.Name.fromString("google.com", &name_buffer);
     var resource_data = dns.ResourceData{
         .A = try std.net.Address.parseIp4("127.0.0.1", 0),
     };
 
-    var opaque_rdata_buffer: [0x1000]u8 = undefined;
-    var fba = std.heap.FixedBufferAllocator.init(&opaque_rdata_buffer);
-    var alloc = &fba.allocator;
-    var opaque_resource_data = try alloc.alloc(u8, resource_data.size());
-
-    const StreamT = std.io.FixedBufferStream([]u8);
-    var stream = StreamT{ .buffer = opaque_resource_data, .pos = 0 };
-    var serializer = std.io.Serializer(.Big, .Bit, StreamT.Writer).init(stream.writer());
-
-    try serializer.serialize(resource_data);
-    try serializer.flush();
+    var opaque_rdata_buffer: [1024]u8 = undefined;
+    var stream = std.io.fixedBufferStream(&opaque_rdata_buffer);
+    _ = try resource_data.writeTo(stream.writer());
+    const opaque_rdata = stream.getWritten();
 
     var packet = dns.Packet{
         .header = .{
@@ -273,7 +262,7 @@ test "rdata serialization" {
             .typ = .A,
             .class = .IN,
             .ttl = 300,
-            .opaque_rdata = opaque_resource_data,
+            .opaque_rdata = opaque_rdata,
         }},
         .nameservers = &[_]dns.Resource{},
         .additionals = &[_]dns.Resource{},

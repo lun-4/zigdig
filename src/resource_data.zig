@@ -127,10 +127,10 @@ pub const ResourceData = union(Type) {
     pub fn writeTo(self: Self, writer: anytype) !usize {
         return switch (self) {
             .A => |addr| blk: {
-                try writer.writeIntBig(addr.in.sa.addr);
-                break :blk @sizeOf(addr.in.sa.addr);
+                try writer.writeIntBig(u32, addr.in.sa.addr);
+                break :blk @sizeOf(@TypeOf(addr.in.sa.addr));
             },
-            .AAAA => |addr| try writer.write(addr.in6.sa.addr),
+            .AAAA => |addr| try writer.write(&addr.in6.sa.addr),
 
             .NS, .MD, .MF, .MB, .MG, .MR, .CNAME, .PTR => |name| try name.writeTo(writer),
 
@@ -150,7 +150,7 @@ pub const ResourceData = union(Type) {
             .MX => |mxdata| blk: {
                 try writer.writeIntBig(u16, mxdata.preference);
                 const exchange_size = try mxdata.exchange.writeTo(writer);
-                break :blk @sizeOf(mxdata.preference) + exchange_size;
+                break :blk @sizeOf(@TypeOf(mxdata.preference)) + exchange_size;
             },
 
             .SRV => |srv| {
