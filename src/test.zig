@@ -46,8 +46,9 @@ test "Packet serialize/deserialize" {
     const buf = try serialTest(packet, &write_buffer);
 
     // deserialize it and compare if everythings' equal
-    var workmem: [5000]u8 = undefined;
-    var deserialized = try deserialTest(buf, &workmem);
+    var incoming = try deserialTest(buf);
+    defer incoming.deinit();
+    const deserialized = incoming.packet;
 
     try std.testing.expectEqual(deserialized.header.id, packet.header.id);
 
@@ -81,8 +82,9 @@ test "deserialization of original google.com/A" {
 
     var decoded = try decodeBase64(TEST_PKT_QUERY, &write_buffer);
 
-    var deserializer_buffer: [0x10000]u8 = undefined;
-    var pkt = try deserialTest(decoded, &deserializer_buffer);
+    var incoming = try deserialTest(decoded);
+    defer incoming.deinit();
+    const pkt = incoming.packet;
 
     try std.testing.expectEqual(@as(u16, 5189), pkt.header.id);
     try std.testing.expectEqual(@as(u16, 1), pkt.header.question_length);
@@ -103,8 +105,9 @@ test "deserialization of reply google.com/A" {
     var encode_buffer: [0x10000]u8 = undefined;
     var decoded = try decodeBase64(TEST_PKT_RESPONSE, &encode_buffer);
 
-    var workmem: [0x100000]u8 = undefined;
-    var pkt = try deserialTest(decoded, &workmem);
+    var incoming = try deserialTest(decoded);
+    defer incoming.deinit();
+    const pkt = incoming.packet;
 
     try std.testing.expectEqual(@as(u16, 17613), pkt.header.id);
     try std.testing.expectEqual(@as(u16, 1), pkt.header.question_length);
@@ -185,12 +188,13 @@ fn serialTest(packet: Packet, write_buffer: []u8) ![]u8 {
 }
 
 const FixedStream = std.io.FixedBufferStream([]const u8);
-fn deserialTest(buf: []const u8, work_memory: []u8) !Packet {
-    var stream = FixedStream{ .buffer = buf, .pos = 0 };
-    var fba = std.heap.FixedBufferAllocator.init(work_memory);
-
-    const incoming = try dns.Packet.readFrom(stream.reader(), fba.allocator());
-    return incoming.packet.*;
+fn deserialTest(packet_data: []const u8) !dns.IncomingPacket {
+    var stream = FixedStream{ .buffer = packet_data, .pos = 0 };
+    const incoming_packet = try dns.Packet.readFrom(
+        stream.reader(),
+        std.testing.allocator,
+    );
+    return incoming_packet;
 }
 
 test "convert string to dns type" {
