@@ -177,9 +177,9 @@ fn serialTest(packet: Packet, write_buffer: []u8) ![]u8 {
     const typ = std.io.FixedBufferStream([]u8);
     var stream = typ{ .buffer = write_buffer, .pos = 0 };
 
-    _ = try packet.writeTo(stream.writer());
+    const written_bytes = try packet.writeTo(stream.writer());
     const written_data = stream.getWritten();
-    //std.debug.assert(written_data.len == written_bytes);
+    try std.testing.expectEqual(written_bytes, written_data.len);
 
     return written_data;
 }
