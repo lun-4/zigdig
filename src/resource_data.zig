@@ -90,11 +90,14 @@ pub const ResourceData = union(Type) {
     ///
     /// For example, a resource data of type A would be
     /// formatted to its representing IPv4 address.
-    pub fn format(self: Self, comptime f: []const u8, options: fmt.FormatOptions, writer: anytype) !void {
+    pub fn format(
+        self: Self,
+        comptime f: []const u8,
+        options: fmt.FormatOptions,
+        writer: anytype,
+    ) !void {
+        _ = f;
         _ = options;
-        if (f.len != 0) {
-            @compileError("Unknown format character: '" ++ f ++ "'");
-        }
 
         switch (self) {
             .A, .AAAA => |addr| return fmt.format(writer, "{}", .{addr}),
@@ -119,8 +122,8 @@ pub const ResourceData = union(Type) {
                 srv.target,
             }),
 
-            .TXT => |text| return fmt.format(writer, "{}", .{text}),
-            else => return fmt.format(writer, "TODO support {}", .{@tagName(self)}),
+            .TXT => |text| return fmt.format(writer, "{s}", .{text}),
+            else => return fmt.format(writer, "TODO support {s}", .{@tagName(self)}),
         }
     }
 

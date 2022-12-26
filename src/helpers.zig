@@ -7,15 +7,14 @@ fn printList(writer: anytype, resource_list: []dns.Resource) !void {
     try writer.print(";;name\t\t\trrtype\tclass\tttl\trdata\n", .{});
 
     for (resource_list) |resource| {
-        _ = resource;
-        //var resource_data = try dns.ResourceData.fromOpaque(resource.typ, resource.opaque_rdata);
-        //try writer.print("{}\t{}\t{}\t{}\t{}\n", .{
-        //    resource.name,
-        //    @tagName(resource.typ),
-        //    @tagName(resource.class),
-        //    resource.ttl,
-        //    resource_data,
-        //});
+        var resource_data = try dns.ResourceData.fromOpaque(resource.typ, resource.opaque_rdata);
+        try writer.print("{s}\t\t{s}\t{s}\t{d}\t{any}\n", .{
+            resource.name,
+            @tagName(resource.typ),
+            @tagName(resource.class),
+            resource.ttl,
+            resource_data,
+        });
     }
 
     try writer.print("\n", .{});
