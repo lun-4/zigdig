@@ -13,6 +13,11 @@ pub const Name = struct {
     /// The name's labels.
     labels: [][]const u8,
 
+    /// Represents the index of that name in its packet's body.
+    ///
+    /// **This is an internal field for DNS name pointer resolution.**
+    packet_index: ?usize = null,
+
     const Self = @This();
 
     /// Returns the total size in bytes of the DNS Name

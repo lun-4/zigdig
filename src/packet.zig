@@ -159,49 +159,12 @@ const StringList = std.ArrayList([]u8);
 const ManyStringList = std.ArrayList([][]const u8);
 
 pub const DeserializationContext = struct {
-    allocator: *std.mem.Allocator,
-    label_pool: StringList,
-    name_pool: ManyStringList,
-    packet_list: ByteList,
-
-    const Self = @This();
-
-    pub fn init(allocator: *std.mem.Allocator) Self {
-        return Self{
-            .allocator = allocator,
-            .label_pool = StringList.init(allocator),
-            .name_pool = ManyStringList.init(allocator),
-            .packet_list = ByteList.init(allocator),
-        };
-    }
-
-    pub fn deinit(self: *Self) void {
-        for (self.label_pool.items) |label| {
-            self.allocator.free(label);
-        }
-
-        self.label_pool.deinit();
-
-        for (self.name_pool.items) |item| {
-            self.allocator.free(item);
-        }
-
-        self.name_pool.deinit();
-
-        self.packet_list.deinit();
-    }
-
-    pub fn newLabel(self: *Self, length: usize) ![]u8 {
-        var newly_allocated = try self.allocator.alloc(u8, length);
-        // keep track of newly allocated label for deinitting
-        try self.label_pool.append(newly_allocated);
-        return newly_allocated;
-    }
+    current_byte_count: usize = 0,
 };
 
 const LabelComponent = union(enum) {
     Full: []const u8,
-    Pointer: Name,
+    Pointer: u8,
     Null: void,
 };
 
@@ -224,8 +187,7 @@ fn WrapperReader(comptime ReaderType: anytype) type {
 
         pub fn read(self: *Self, buffer: []u8) !usize {
             const bytes_read = try self.underlying_reader.read(buffer);
-            const bytes = buffer[0..bytes_read];
-            try self.ctx.packet_list.writer().writeAll(bytes);
+            self.ctx.current_byte_count += bytes_read;
             return bytes_read;
         }
 
@@ -283,6 +245,102 @@ pub const Packet = struct {
 
         return header_size + question_size +
             answers_size + nameservers_size + additionals_size;
+    }
+
+    fn resolvePointer(
+        self: Self,
+        reader: anytype,
+        first_offset_component: u8,
+        allocator: std.mem.Allocator,
+    ) ![][]const u8 {
+        // we need to read another u8 and merge both that and first_offset_component
+        // into a u16 we can use as an offset in the entire packet, etc.
+
+        // the final offset is actually 14 bits, the first two are identification
+        // of the offset itself.
+        const second_offset_component = try reader.readIntBig(u8);
+
+        // merge them together
+        var offset: u16 = (first_offset_component << 7) | second_offset_component;
+
+        // set first two bits of ptr_offset to zero as they're the
+        // pointer prefix bits (which are always 1, which brings problems)
+        offset &= ~@as(u16, 1 << 15);
+        offset &= ~@as(u16, 1 << 14);
+
+        // RFC1035 says:
+        //
+        // The OFFSET field specifies an offset from
+        // the start of the message (i.e., the first octet of the ID field in the
+        // domain header).  A zero offset specifies the first byte of the ID field,
+        // etc.
+
+        // algorithm:
+        // - go through names in question, answer, nameserver, additional resources
+        //   in that order
+        // - when we find a name whose current_byte_count is within bounds of
+        //   the given pointer offset, resolve it
+        // - this means walk (current_byte_count - offset) bytes inside of the
+        //    Name's labels, and create a new one from the pre-existing memory.
+        //
+        // make sure to dupe() this memory or else we'll have double-free cases
+
+        const fields_with_resources = .{ "questions", "answers", "nameservers", "additionals" };
+
+        var maybe_referenced_name: ?dns.Name = null;
+
+        inline for (fields_with_resources) |field_name| {
+            const resource_list = @field(self, field_name);
+            for (resource_list) |resource| {
+                const name = resource.name;
+                comptime std.debug.assert(@TypeOf(name) == dns.Name);
+                const packet_index = if (name.packet_index) |idx| idx else continue;
+
+                const start_index = packet_index;
+                var name_length: usize = 0;
+                for (name.labels) |label| name_length += label.len;
+                const end_index = packet_index + name_length;
+
+                if (start_index <= offset and offset <= end_index) {
+                    maybe_referenced_name = name;
+                    break;
+                }
+            }
+
+            if (maybe_referenced_name != null) break;
+        }
+
+        if (maybe_referenced_name) |referenced_name| {
+            // now that we have a name that is within the given offset,
+            // now we need to know which labels inside that name to dupe() from
+
+            var new_labels = std.ArrayList([]const u8).init(allocator);
+            defer new_labels.deinit();
+
+            var label_cursor: usize = referenced_name.packet_index.?;
+            var label_index: ?usize = null;
+
+            for (referenced_name.labels) |label, idx| {
+                // if cursor is in offset's range, select that
+                // label onwards as our new label
+                const label_start = label_cursor;
+                if (label_start <= offset) {
+                    label_index = idx;
+                }
+                label_cursor += label.len;
+            }
+
+            const referenced_labels = referenced_name.labels[label_index.?..];
+
+            for (referenced_labels) |referenced_label| {
+                const owned_label = try allocator.dupe(u8, referenced_label);
+                try new_labels.append(owned_label);
+            }
+
+            return try new_labels.toOwnedSlice();
+        } else {
+            return error.UnknownPointerOffset;
+        }
     }
 
     fn unfoldPointer(
@@ -396,16 +454,7 @@ pub const Packet = struct {
         var bit2 = (possible_length & (1 << 6)) != 0;
 
         if (bit1 and bit2) {
-            // its a pointer!
-            //var name = try Self.unfoldPointer(
-            //    possible_length,
-            //    deserializer,
-            //    ctx,
-            //    name_buffer,
-            //    name_index,
-            //);
-            //return LabelComponent{ .Pointer = name };
-            return error.TODO; // pointers...
+            return LabelComponent{ .Pointer = possible_length };
         } else {
             // those must be 0
             std.debug.assert((!bit1) and (!bit2));
@@ -428,7 +477,6 @@ pub const Packet = struct {
         allocator: std.mem.Allocator,
         options: ReadNameOptions,
     ) !Name {
-        _ = self;
         // RFC1035, 4.1.4 Message Compression:
         // The compression scheme allows a domain name in a message to be
         // represented as either:
@@ -443,6 +491,8 @@ pub const Packet = struct {
         var name_buffer = std.ArrayList([]const u8).init(allocator);
         defer name_buffer.deinit();
 
+        const current_byte_count = reader.context.ctx.current_byte_count;
+
         while (true) {
             if (name_buffer.items.len > options.max_label_count)
                 return error.Overflow;
@@ -450,17 +500,22 @@ pub const Packet = struct {
             const component = try Self.readLabelComponent(reader, allocator);
             switch (component) {
                 .Full => |label| try name_buffer.append(label),
-                .Pointer => |pointer| {
-                    _ = pointer;
-                    return error.TODO;
-                    //const label = try self.resolveLabelPointer(pointer);
-                    //try name_buffer.append(label);
+                .Pointer => |first_offset_component| {
+                    const labels = try self.resolvePointer(reader, first_offset_component, allocator);
+                    defer allocator.free(labels);
+
+                    // copy referenced labels to name_buffer
+                    for (labels) |label| try name_buffer.append(label);
+                    break;
                 },
                 .Null => break,
             }
         }
 
-        return Name{ .labels = try name_buffer.toOwnedSlice() };
+        return Name{
+            .labels = try name_buffer.toOwnedSlice(),
+            .packet_index = current_byte_count,
+        };
     }
 
     /// Extract an RDATA. This only spits out a slice of u8.
@@ -509,12 +564,16 @@ pub const Packet = struct {
     }
 
     pub fn readFrom(
-        reader: anytype,
+        incoming_reader: anytype,
         allocator: std.mem.Allocator,
     ) !IncomingPacket {
-        // TODO endianess on Header
         var packet = try allocator.create(Self);
         errdefer allocator.destroy(packet);
+
+        var ctx = DeserializationContext{};
+        const WrapperR = WrapperReader(@TypeOf(incoming_reader));
+        var wrapper_reader = WrapperR.init(incoming_reader, &ctx);
+        var reader = wrapper_reader.reader();
 
         packet.header = try Header.readFrom(reader);
 
@@ -562,12 +621,14 @@ pub const IncomingPacket = struct {
     packet: *Packet,
 
     fn freeResource(self: @This(), resource: Resource) void {
+        for (resource.name.labels) |label| self.allocator.free(label);
         self.allocator.free(resource.name.labels);
         self.allocator.free(resource.opaque_rdata);
     }
 
     pub fn deinit(self: @This()) void {
         for (self.packet.questions) |question| {
+            for (question.name.labels) |label| self.allocator.free(label);
             self.allocator.free(question.name.labels);
         }
         for (self.packet.answers) |resource| self.freeResource(resource);

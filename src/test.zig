@@ -94,12 +94,12 @@ test "deserialization of original google.com/A" {
     const question = pkt.questions[0];
 
     try expectGoogleLabels(question.name.labels);
+    try std.testing.expectEqual(@as(usize, 12), question.name.packet_index.?);
     try std.testing.expectEqual(question.typ, dns.ResourceType.A);
     try std.testing.expectEqual(question.class, dns.ResourceClass.IN);
 }
 
 test "deserialization of reply google.com/A" {
-    if (true) return error.SkipZigTest;
     var encode_buffer: [0x10000]u8 = undefined;
     var decoded = try decodeBase64(TEST_PKT_RESPONSE, &encode_buffer);
 
