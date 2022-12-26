@@ -2,12 +2,14 @@ const std = @import("std");
 const dns = @import("lib.zig");
 
 /// Print a slice of DNSResource to stderr.
-fn printList(writer: anytype, resource_list: []dns.Resource) !void {
+fn printList(packet: dns.Packet, allocator: std.mem.Allocator, writer: anytype, resource_list: []dns.Resource) !void {
     // TODO the formatting here is not good...
     try writer.print(";;name\t\t\trrtype\tclass\tttl\trdata\n", .{});
 
     for (resource_list) |resource| {
-        var resource_data = try dns.ResourceData.fromOpaque(resource.typ, resource.opaque_rdata);
+        var resource_data = try dns.ResourceData.fromOpaque(packet, resource.typ, resource.opaque_rdata, allocator);
+        defer resource_data.deinit(allocator);
+
         try writer.print("{s}\t\t{s}\t{s}\t{d}\t{any}\n", .{
             resource.name,
             @tagName(resource.typ),
@@ -21,7 +23,7 @@ fn printList(writer: anytype, resource_list: []dns.Resource) !void {
 }
 
 /// Print a packet to stderr.
-pub fn printAsZoneFile(packet: dns.Packet, writer: anytype) !void {
+pub fn printAsZoneFile(packet: dns.Packet, allocator: std.mem.Allocator, writer: anytype) !void {
     try writer.print("id: {}, opcode: {}, rcode: {}\n", .{
         packet.header.id,
         packet.header.opcode,
@@ -52,21 +54,21 @@ pub fn printAsZoneFile(packet: dns.Packet, writer: anytype) !void {
 
     if (packet.header.answer_length > 0) {
         try writer.print(";; -- answer --\n", .{});
-        try printList(writer, packet.answers);
+        try printList(packet, allocator, writer, packet.answers);
     } else {
         try writer.print(";; no answer\n", .{});
     }
 
     if (packet.header.nameserver_length > 0) {
         try writer.print(";; -- authority --\n", .{});
-        try printList(writer, packet.nameservers);
+        try printList(packet, allocator, writer, packet.nameservers);
     } else {
         try writer.print(";; no authority\n\n", .{});
     }
 
     if (packet.header.additional_length > 0) {
         try writer.print(";; -- additional --\n", .{});
-        try printList(writer, packet.additionals);
+        try printList(packet, allocator, writer, packet.additionals);
     } else {
         try writer.print(";; no additional\n\n", .{});
     }

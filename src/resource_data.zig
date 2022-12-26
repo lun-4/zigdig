@@ -2,6 +2,7 @@ const std = @import("std");
 const fmt = std.fmt;
 
 const dns = @import("./lib.zig");
+const pkt = @import("./packet.zig");
 const Type = dns.ResourceType;
 
 pub const SOAData = struct {
@@ -169,14 +170,55 @@ pub const ResourceData = union(Type) {
         };
     }
 
+    /// Only call this if you dynamically created a ResourceData
+    /// through the fromOpaque() method.
+    pub fn deinit(self: Self, allocator: std.mem.Allocator) void {
+        switch (self) {
+            .NS, .MD, .MF, .MB, .MG, .MR, .CNAME, .PTR => |name| name.deinit(allocator),
+            .SOA => |soa_data| {
+                soa_data.mname.deinit(allocator);
+                soa_data.rname.deinit(allocator);
+            },
+
+            .MX => |mxdata| {
+                mxdata.exchange.deinit(allocator);
+            },
+            .TXT => |data| allocator.free(data),
+            else => {},
+        }
+    }
+
+    pub const Opaque = struct {
+        data: []const u8,
+        current_byte_count: usize,
+    };
+
     /// Deserialize a given opaque resource data.
+    ///
+    /// Call deinit() with the same allocator.
     pub fn fromOpaque(
+        /// Packet the resource data comes from.
+        ///
+        /// This is required as resource data may have name pointers
+        /// that refer to the packet index.
+        packet: dns.Packet,
         typ: dns.ResourceType,
-        opaque_resource_data: []const u8,
+        opaque_resource_data: Opaque,
+        allocator: std.mem.Allocator,
     ) !ResourceData {
         const BufferT = std.io.FixedBufferStream([]const u8);
-        var stream = BufferT{ .buffer = opaque_resource_data, .pos = 0 };
-        var reader = stream.reader();
+        var stream = BufferT{ .buffer = opaque_resource_data.data, .pos = 0 };
+        var underlying_reader = stream.reader();
+
+        // important to keep track of that rdata's position in the packet
+        // as rdata could point to other rdata.
+
+        var ctx = pkt.DeserializationContext{
+            .current_byte_count = opaque_resource_data.current_byte_count,
+        };
+        const WrapperR = pkt.WrapperReader(BufferT.Reader);
+        var wrapper_reader = WrapperR.init(underlying_reader, &ctx);
+        var reader = wrapper_reader.reader();
 
         var rdata = switch (typ) {
             .A => blk: {
@@ -194,68 +236,65 @@ pub const ResourceData = union(Type) {
                 };
             },
 
-            //.NS => ResourceData{ .NS = try dns.Packet.readName(&deserializer, ctx, try createNameBuffer(ctx), null) },
-            //.CNAME => ResourceData{ .CNAME = try dns.Packet.readName(&deserializer, ctx, try createNameBuffer(ctx), null) },
-            //.PTR => ResourceData{ .PTR = try dns.Packet.readName(&deserializer, ctx, try createNameBuffer(ctx), null) },
-            //.MX => blk: {
-            //    break :blk ResourceData{
-            //        .MX = MXData{
-            //            .preference = try deserializer.deserialize(u16),
-            //            .exchange = try dns.Packet.readName(&deserializer, ctx, try createNameBuffer(ctx), null),
-            //        },
-            //    };
-            //},
-            // .MD => ResourceData{ .MD = try dns.Packet.readName(&deserializer, ctx, try createNameBuffer(ctx), null) },
-            // .MF => ResourceData{ .MF = try dns.Packet.readName(&deserializer, ctx, try createNameBuffer(ctx), null) },
+            .NS => ResourceData{ .NS = try packet.readName(reader, allocator, .{}) },
+            .CNAME => ResourceData{ .CNAME = try packet.readName(reader, allocator, .{}) },
+            .PTR => ResourceData{ .PTR = try packet.readName(reader, allocator, .{}) },
+            .MD => ResourceData{ .MD = try packet.readName(reader, allocator, .{}) },
+            .MF => ResourceData{ .MF = try packet.readName(reader, allocator, .{}) },
 
-            // .SOA => blk: {
-            //     var mname = try dns.Packet.readName(&deserializer, ctx, try createNameBuffer(ctx), null);
-            //     var rname = try dns.Packet.readName(&deserializer, ctx, try createNameBuffer(ctx), null);
-            //     var serial = try deserializer.deserialize(u32);
-            //     var refresh = try deserializer.deserialize(u32);
-            //     var retry = try deserializer.deserialize(u32);
-            //     var expire = try deserializer.deserialize(u32);
-            //     var minimum = try deserializer.deserialize(u32);
+            .MX => blk: {
+                break :blk ResourceData{
+                    .MX = MXData{
+                        .preference = try reader.readIntBig(u16),
+                        .exchange = try packet.readName(reader, allocator, .{}),
+                    },
+                };
+            },
 
-            //     break :blk ResourceData{
-            //         .SOA = SOAData{
-            //             .mname = mname,
-            //             .rname = rname,
-            //             .serial = serial,
-            //             .refresh = refresh,
-            //             .retry = retry,
-            //             .expire = expire,
-            //             .minimum = minimum,
-            //         },
-            //     };
-            // },
-            // .SRV => blk: {
-            //     const priority = try deserializer.deserialize(u16);
-            //     const weight = try deserializer.deserialize(u16);
-            //     const port = try deserializer.deserialize(u16);
-            //     var target = try dns.Packet.readName(&deserializer, ctx, try createNameBuffer(ctx), null);
+            .SOA => blk: {
+                var mname = try packet.readName(reader, allocator, .{});
+                var rname = try packet.readName(reader, allocator, .{});
+                var serial = try reader.readIntBig(u32);
+                var refresh = try reader.readIntBig(u32);
+                var retry = try reader.readIntBig(u32);
+                var expire = try reader.readIntBig(u32);
+                var minimum = try reader.readIntBig(u32);
 
-            //     break :blk ResourceData{
-            //         .SRV = .{
-            //             .priority = priority,
-            //             .weight = weight,
-            //             .port = port,
-            //             .target = target,
-            //         },
-            //     };
-            // },
-            // .TXT => blk: {
-            //     var txt_buffer = try ctx.allocator.alloc(u8, 256);
-            //     try ctx.label_pool.append(txt_buffer);
+                break :blk ResourceData{
+                    .SOA = SOAData{
+                        .mname = mname,
+                        .rname = rname,
+                        .serial = serial,
+                        .refresh = refresh,
+                        .retry = retry,
+                        .expire = expire,
+                        .minimum = minimum,
+                    },
+                };
+            },
+            .SRV => blk: {
+                const priority = try reader.readIntBig(u16);
+                const weight = try reader.readIntBig(u16);
+                const port = try reader.readIntBig(u16);
+                const target = try packet.readName(reader, allocator, .{});
+                break :blk ResourceData{
+                    .SRV = .{
+                        .priority = priority,
+                        .weight = weight,
+                        .port = port,
+                        .target = target,
+                    },
+                };
+            },
+            .TXT => blk: {
+                const length = try reader.readIntBig(u8);
+                if (length > 256) return error.Overflow;
 
-            //     const length = try deserializer.deserialize(u8);
-            //     var idx: usize = 0;
-            //     while (idx < length) : (idx += 1) {
-            //         txt_buffer[idx] = try deserializer.deserialize(u8);
-            //     }
+                var text = try allocator.alloc(u8, length);
+                _ = try reader.read(text);
 
-            //     break :blk ResourceData{ .TXT = txt_buffer[0..idx] };
-            // },
+                break :blk ResourceData{ .TXT = text };
+            },
 
             else => {
                 logger.warn("unexpected rdata: {}\n", .{typ});

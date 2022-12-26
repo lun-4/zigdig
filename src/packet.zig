@@ -145,7 +145,7 @@ pub const Resource = struct {
 
     /// Opaque Resource Data.
     /// Parsing of the data in this is done by a separate package, dns.rdata
-    opaque_rdata: []const u8,
+    opaque_rdata: dns.ResourceData.Opaque,
 
     pub fn writeTo(self: @This(), writer: anytype) !usize {
         const name_size = try self.name.writeTo(writer);
@@ -155,8 +155,8 @@ pub const Resource = struct {
         try writer.writeIntBig(i32, self.ttl);
 
         const rdata_prefix_size = 16 / 8;
-        try writer.writeIntBig(u16, @intCast(u16, self.opaque_rdata.len));
-        const rdata_size = try writer.write(self.opaque_rdata);
+        try writer.writeIntBig(u16, @intCast(u16, self.opaque_rdata.data.len));
+        const rdata_size = try writer.write(self.opaque_rdata.data);
 
         return name_size + typ_size + class_size + ttl_size + rdata_prefix_size + rdata_size;
     }
@@ -187,7 +187,7 @@ const LabelComponent = union(enum) {
 ///
 /// Useful to hold deserialization state without having to pass an entire
 /// parameter around on every single helper function.
-fn WrapperReader(comptime ReaderType: anytype) type {
+pub fn WrapperReader(comptime ReaderType: anytype) type {
     return struct {
         underlying_reader: ReaderType,
         ctx: *DeserializationContext,
@@ -437,7 +437,12 @@ pub const Packet = struct {
         max_label_count: usize = 128,
     };
 
-    fn readName(
+    /// You should not need to use this function unless you have a label to
+    /// decode.
+    ///
+    /// This is used by ResourceData.fromOpaque so it can parse labels
+    /// that are inside of the resource data section.
+    pub fn readName(
         self: Self,
         reader: anytype,
         allocator: std.mem.Allocator,
@@ -505,12 +510,15 @@ pub const Packet = struct {
     fn readResourceDataFrom(
         reader: anytype,
         allocator: std.mem.Allocator,
-    ) ![]const u8 {
+    ) !dns.ResourceData.Opaque {
         const rdata_length = try reader.readIntBig(u16);
         var opaque_rdata = try allocator.alloc(u8, rdata_length);
         const read_bytes = try reader.read(opaque_rdata);
         std.debug.assert(read_bytes == opaque_rdata.len);
-        return opaque_rdata;
+        return .{
+            .data = opaque_rdata,
+            .current_byte_count = reader.context.ctx.current_byte_count,
+        };
     }
 
     fn readResourceListFrom(
@@ -606,7 +614,7 @@ pub const IncomingPacket = struct {
     fn freeResource(self: @This(), resource: Resource) void {
         for (resource.name.labels) |label| self.allocator.free(label);
         self.allocator.free(resource.name.labels);
-        self.allocator.free(resource.opaque_rdata);
+        self.allocator.free(resource.opaque_rdata.data);
     }
 
     fn freeResourceList(self: @This(), resource_list: []Resource) void {

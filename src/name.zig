@@ -20,6 +20,15 @@ pub const Name = struct {
 
     const Self = @This();
 
+    /// Only use this if you have manually heap allocated a Name
+    /// through the internal Packet.readName function.
+    ///
+    /// IncomingPacket.deinit already frees alloccated Names.
+    pub fn deinit(self: Self, allocator: std.mem.Allocator) void {
+        for (self.labels) |label| allocator.free(label);
+        allocator.free(self.labels);
+    }
+
     /// Returns the total size in bytes of the DNS Name
     pub fn networkSize(self: Self) usize {
         // by default, add the null octet at the end of it
