@@ -10,24 +10,26 @@ naive dns client library in zig
 
 ## what does it not do
  - no edns0
+ - support all resolv.conf options
  - can deserialize pointer labels (seamless for library user), but does not
     serialize into pointers
  - follow CNAME records
 
 ## how do
 
- - zig zag zog https://ziglang.org
+ - zig master branch: https://ziglang.org
  - have a `/etc/resolv.conf`
- - (theoretical) posix os w/ sockets, tested on linux
- - have The Internet (TM) at your disposal
+ - tested on linux, should work on bsd i think
 
 ```
-zig build test
+git clone ...
+cd zigdig
 
-# on debug mode it gets debug stuff to stdout. compile in
-# release-safe or above if you're not developing with this lib
+zig build test
 zig build install --prefix ~/.local/
 ```
+
+and then
 
 ```bash
 zigdig google.com a
