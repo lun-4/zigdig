@@ -5,6 +5,8 @@ const dns = @import("./lib.zig");
 const pkt = @import("./packet.zig");
 const Type = dns.ResourceType;
 
+const logger = std.log.scoped(.dns_rdata);
+
 pub const SOAData = struct {
     mname: dns.Name,
     rname: dns.Name,
@@ -305,13 +307,3 @@ pub const ResourceData = union(Type) {
         return rdata;
     }
 };
-
-const logger = std.log.scoped(.dns_rdata);
-
-fn createNameBuffer(ctx: *dns.DeserializationContext) ![][]const u8 {
-    // TODO should we just keep this hardcoded? how could we better manage those
-    // name buffers?
-    var name_buffer = try ctx.allocator.alloc([]const u8, 128);
-    try ctx.name_pool.append(name_buffer);
-    return name_buffer;
-}

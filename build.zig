@@ -21,8 +21,6 @@ pub fn build(b: *Builder) void {
 
     // this exports both a library and a binary
 
-    // TODO separate exe entrypoint and lib entrypoint
-
     const exe = b.addExecutable("zigdig", "src/main.zig");
     exe.setTarget(target);
     exe.setBuildMode(mode);
