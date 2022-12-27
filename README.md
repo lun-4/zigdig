@@ -37,10 +37,39 @@ zigdig google.com a
 
 ## using the library
 
+### getAddressList-style api
+
 ```zig
 const dns = @import("dns");
 
 pub fn main() !void {
+    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
+    defer {
+        _ = gpa.deinit();
+    }
+    var allocator = gpa.alloator();
+
+    var addresses = try dns.helpers.getAddressList("ziglang.org", allocator);
+    defer addresses.deinit();
+
+    for (addresses.addrs) |address| {
+        std.debug.print("we live in a society {}", .{address});
+    }
+}
+```
+
+### full api
+
+```zig
+const dns = @import("dns");
+
+pub fn main() !void {
+    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
+    defer {
+        _ = gpa.deinit();
+    }
+    var allocator = gpa.alloator();
+
     var name_buffer: [128][]const u8 = undefined;
     const name = try dns.Name.fromString("ziglang.org", &name_buffer);
 
@@ -99,13 +128,11 @@ pub fn main() !void {
     );
     defer resource_data.deinit(allocator);
 
-    // you now have an std.net.Address
+    // you now have an std.net.Address to use to your hearts content
     const ziglang_address = resource_data.A;
 }
 
 ```
-
-**TODO docs**
 
 it is recommended to look at zigdig's source on `src/main.zig` to understand
 how things tick using the library, but it boils down to three things:

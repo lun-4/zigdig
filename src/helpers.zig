@@ -206,3 +206,70 @@ pub fn randomNameserver(output_buffer: []u8) !?[]const u8 {
 
     return null;
 }
+
+const AddressList = struct {
+    allocator: std.mem.Allocator,
+    addrs: []std.net.Address,
+    pub fn deinit(self: @This()) void {
+        self.allocator.free(self.addrs);
+    }
+};
+
+pub fn getAddressList(incoming_name: []const u8, allocator: std.mem.Allocator) !AddressList {
+    var name_buffer: [128][]const u8 = undefined;
+    const name = try dns.Name.fromString(incoming_name, &name_buffer);
+
+    var packet = dns.Packet{
+        .header = .{
+            .id = dns.helpers.randomHeaderId(),
+            .is_response = false,
+            .wanted_recursion = true,
+            .question_length = 1,
+        },
+        .questions = &[_]dns.Question{
+            .{
+                .name = name,
+                .typ = .A,
+                .class = .IN,
+            },
+        },
+        .answers = &[_]dns.Resource{},
+        .nameservers = &[_]dns.Resource{},
+        .additionals = &[_]dns.Resource{},
+    };
+
+    const conn = try dns.helpers.connectToSystemResolver();
+    defer conn.close();
+
+    logger.info("selected nameserver: {}\n", .{conn.address});
+
+    try conn.sendPacket(packet);
+
+    const reply = try conn.receivePacket(allocator, 4096);
+    defer reply.deinit();
+
+    const reply_packet = reply.packet;
+
+    std.debug.assert(packet.header.id == reply_packet.header.id);
+    std.debug.assert(reply_packet.header.is_response);
+
+    var list = std.ArrayList(std.net.Address).init(allocator);
+    defer list.deinit();
+
+    for (reply_packet.answers) |resource| {
+        var resource_data = try dns.ResourceData.fromOpaque(
+            reply_packet,
+            resource.typ,
+            resource.opaque_rdata,
+            allocator,
+        );
+        defer resource_data.deinit(allocator);
+
+        try list.append(resource_data.A);
+    }
+
+    return AddressList{
+        .allocator = allocator,
+        .addrs = list.toOwnedSlice(),
+    };
+}
