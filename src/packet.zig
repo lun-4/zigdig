@@ -218,6 +218,8 @@ pub fn WrapperReader(comptime ReaderType: anytype) type {
     };
 }
 
+const NameList = std.ArrayList(Name);
+
 /// A DNS packet, as specified in RFC1035.
 pub const Packet = struct {
     header: Header,
@@ -225,6 +227,8 @@ pub const Packet = struct {
     answers: []Resource,
     nameservers: []Resource,
     additionals: []Resource,
+
+    extra_names: ?NameList = null,
 
     const Self = @This();
 
@@ -352,6 +356,26 @@ pub const Packet = struct {
             if (maybe_referenced_name != null) break;
         }
 
+        // TODO refactor copypaste
+
+        if (self.extra_names) |names| {
+            for (names.items) |name| {
+                comptime std.debug.assert(@TypeOf(name) == dns.Name);
+                const packet_index =
+                    if (name.packet_index) |idx| idx else continue;
+
+                const start_index = packet_index;
+                var name_length: usize = 0;
+                for (name.labels) |label| name_length += label.len;
+                const end_index = packet_index + name_length;
+
+                if (start_index <= offset and offset <= end_index) {
+                    maybe_referenced_name = name;
+                    break;
+                }
+            }
+        }
+
         if (maybe_referenced_name) |referenced_name| {
             // now that we have a name that is within the given offset,
             // now we need to know which labels inside that name to dupe() from
@@ -381,6 +405,27 @@ pub const Packet = struct {
 
             return try new_labels.toOwnedSlice();
         } else {
+            logger.warn("unknown pointer offset: pointer has offset={d}", .{offset});
+
+            inline for (fields_with_resources) |field_name| {
+                const resource_list = @field(self, field_name);
+                for (resource_list) |resource| {
+                    logger.warn(
+                        "known name: {} at offset {?d}",
+                        .{ resource.name, resource.name.packet_index },
+                    );
+                }
+            }
+
+            if (self.extra_names) |names| {
+                for (names.items) |name| {
+                    logger.warn(
+                        "extra known name: {} at offset {?d}",
+                        .{ name, name.packet_index },
+                    );
+                }
+            }
+
             return error.UnknownPointerOffset;
         }
     }
@@ -435,6 +480,7 @@ pub const Packet = struct {
 
     const ReadNameOptions = struct {
         max_label_count: usize = 128,
+        is_rdata: bool = false,
     };
 
     /// You should not need to use this function unless you have a label to
@@ -443,7 +489,7 @@ pub const Packet = struct {
     /// This is used by ResourceData.fromOpaque so it can parse labels
     /// that are inside of the resource data section.
     pub fn readName(
-        self: Self,
+        self: *Self,
         reader: anytype,
         allocator: std.mem.Allocator,
         options: ReadNameOptions,
@@ -497,10 +543,16 @@ pub const Packet = struct {
             }
         }
 
-        return Name{
+        const name = Name{
             .labels = try name_buffer.toOwnedSlice(),
             .packet_index = current_byte_count,
         };
+
+        if (options.is_rdata) {
+            try self.extra_names.?.append(name);
+        }
+
+        return name;
     }
 
     /// Extract an RDATA. This only spits out a slice of u8.
@@ -513,16 +565,17 @@ pub const Packet = struct {
     ) !dns.ResourceData.Opaque {
         const rdata_length = try reader.readIntBig(u16);
         var opaque_rdata = try allocator.alloc(u8, rdata_length);
+        const rdata_index = reader.context.ctx.current_byte_count;
         const read_bytes = try reader.read(opaque_rdata);
         std.debug.assert(read_bytes == opaque_rdata.len);
         return .{
             .data = opaque_rdata,
-            .current_byte_count = reader.context.ctx.current_byte_count,
+            .current_byte_count = rdata_index,
         };
     }
 
     fn readResourceListFrom(
-        self: Self,
+        self: *Self,
         reader: anytype,
         allocator: std.mem.Allocator,
         resource_count: usize,
@@ -558,6 +611,7 @@ pub const Packet = struct {
     ) !IncomingPacket {
         var packet = try allocator.create(Self);
         errdefer allocator.destroy(packet);
+        packet.extra_names = NameList.init(allocator);
 
         var ctx = DeserializationContext{};
         const WrapperR = WrapperReader(@TypeOf(incoming_reader));
@@ -627,11 +681,17 @@ pub const IncomingPacket = struct {
             for (question.name.labels) |label| self.allocator.free(label);
             self.allocator.free(question.name.labels);
         }
-        self.allocator.free(self.packet.questions);
 
+        self.allocator.free(self.packet.questions);
         self.freeResourceList(self.packet.answers);
         self.freeResourceList(self.packet.nameservers);
         self.freeResourceList(self.packet.additionals);
+
+        if (self.packet.extra_names) |list| {
+            for (list.items) |name| name.deinit(self.allocator);
+            list.deinit();
+        }
+
         self.allocator.destroy(self.packet);
     }
 };

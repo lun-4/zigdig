@@ -174,13 +174,13 @@ pub const ResourceData = union(Type) {
     /// through the fromOpaque() method.
     pub fn deinit(self: Self, allocator: std.mem.Allocator) void {
         switch (self) {
-            .NS, .MD, .MF, .MB, .MG, .MR, .CNAME, .PTR => |name| name.deinit(allocator),
-            .SOA => |soa_data| {
-                soa_data.mname.deinit(allocator);
-                soa_data.rname.deinit(allocator);
-            },
-            .MX => |mxdata| mxdata.exchange.deinit(allocator),
-            .SRV => |srv| srv.target.deinit(allocator),
+            // .NS, .MD, .MF, .MB, .MG, .MR, .CNAME, .PTR => |name| name.deinit(allocator),
+            // .SOA => |soa_data| {
+            //     soa_data.mname.deinit(allocator);
+            //     soa_data.rname.deinit(allocator);
+            // },
+            // .MX => |mxdata| mxdata.exchange.deinit(allocator),
+            // .SRV => |srv| srv.target.deinit(allocator),
             .TXT => |data| allocator.free(data),
             else => {},
         }
@@ -199,7 +199,7 @@ pub const ResourceData = union(Type) {
         ///
         /// This is required as resource data may have name pointers
         /// that refer to the packet index.
-        packet: dns.Packet,
+        packet: *dns.Packet,
         typ: dns.ResourceType,
         opaque_resource_data: Opaque,
         allocator: std.mem.Allocator,
@@ -218,6 +218,8 @@ pub const ResourceData = union(Type) {
         var wrapper_reader = WrapperR.init(underlying_reader, &ctx);
         var reader = wrapper_reader.reader();
 
+        const options = .{ .is_rdata = true };
+
         var rdata = switch (typ) {
             .A => blk: {
                 var ip4addr: [4]u8 = undefined;
@@ -234,24 +236,24 @@ pub const ResourceData = union(Type) {
                 };
             },
 
-            .NS => ResourceData{ .NS = try packet.readName(reader, allocator, .{}) },
-            .CNAME => ResourceData{ .CNAME = try packet.readName(reader, allocator, .{}) },
-            .PTR => ResourceData{ .PTR = try packet.readName(reader, allocator, .{}) },
-            .MD => ResourceData{ .MD = try packet.readName(reader, allocator, .{}) },
-            .MF => ResourceData{ .MF = try packet.readName(reader, allocator, .{}) },
+            .NS => ResourceData{ .NS = try packet.readName(reader, allocator, options) },
+            .CNAME => ResourceData{ .CNAME = try packet.readName(reader, allocator, options) },
+            .PTR => ResourceData{ .PTR = try packet.readName(reader, allocator, options) },
+            .MD => ResourceData{ .MD = try packet.readName(reader, allocator, options) },
+            .MF => ResourceData{ .MF = try packet.readName(reader, allocator, options) },
 
             .MX => blk: {
                 break :blk ResourceData{
                     .MX = MXData{
                         .preference = try reader.readIntBig(u16),
-                        .exchange = try packet.readName(reader, allocator, .{}),
+                        .exchange = try packet.readName(reader, allocator, options),
                     },
                 };
             },
 
             .SOA => blk: {
-                var mname = try packet.readName(reader, allocator, .{});
-                var rname = try packet.readName(reader, allocator, .{});
+                var mname = try packet.readName(reader, allocator, options);
+                var rname = try packet.readName(reader, allocator, options);
                 var serial = try reader.readIntBig(u32);
                 var refresh = try reader.readIntBig(u32);
                 var retry = try reader.readIntBig(u32);
@@ -274,7 +276,7 @@ pub const ResourceData = union(Type) {
                 const priority = try reader.readIntBig(u16);
                 const weight = try reader.readIntBig(u16);
                 const port = try reader.readIntBig(u16);
-                const target = try packet.readName(reader, allocator, .{});
+                const target = try packet.readName(reader, allocator, options);
                 break :blk ResourceData{
                     .SRV = .{
                         .priority = priority,

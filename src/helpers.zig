@@ -2,7 +2,7 @@ const std = @import("std");
 const dns = @import("lib.zig");
 
 /// Print a slice of DNSResource to stderr.
-fn printList(packet: dns.Packet, allocator: std.mem.Allocator, writer: anytype, resource_list: []dns.Resource) !void {
+fn printList(packet: *dns.Packet, allocator: std.mem.Allocator, writer: anytype, resource_list: []dns.Resource) !void {
     // TODO the formatting here is not good...
     try writer.print(";;name\t\t\trrtype\tclass\tttl\trdata\n", .{});
 
@@ -23,7 +23,7 @@ fn printList(packet: dns.Packet, allocator: std.mem.Allocator, writer: anytype, 
 }
 
 /// Print a packet to stderr.
-pub fn printAsZoneFile(packet: dns.Packet, allocator: std.mem.Allocator, writer: anytype) !void {
+pub fn printAsZoneFile(packet: *dns.Packet, allocator: std.mem.Allocator, writer: anytype) !void {
     try writer.print("id: {}, opcode: {}, rcode: {}\n", .{
         packet.header.id,
         packet.header.opcode,

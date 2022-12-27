@@ -34,7 +34,7 @@ pub fn main() !void {
     const name = try dns.Name.fromString(name_string, &name_buffer);
 
     // create our packet
-    const packet = dns.Packet{
+    var packet = dns.Packet{
         .header = .{
             .id = dns.helpers.randomHeaderId(),
             .is_response = false,
@@ -60,7 +60,7 @@ pub fn main() !void {
 
     logger.info("selected nameserver: {}\n", .{conn.address});
     const stdout = std.io.getStdOut();
-    try dns.helpers.printAsZoneFile(packet, allocator, stdout.writer());
+    try dns.helpers.printAsZoneFile(&packet, allocator, stdout.writer());
 
     try conn.sendPacket(packet);
 
@@ -73,7 +73,7 @@ pub fn main() !void {
     try std.testing.expectEqual(packet.header.id, reply_packet.header.id);
     try std.testing.expect(reply_packet.header.is_response);
 
-    try dns.helpers.printAsZoneFile(reply_packet.*, allocator, stdout.writer());
+    try dns.helpers.printAsZoneFile(reply_packet, allocator, stdout.writer());
 }
 
 test "awooga" {

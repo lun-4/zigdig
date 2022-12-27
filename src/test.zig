@@ -128,7 +128,14 @@ test "deserialization of reply google.com/A" {
     try testing.expectEqual(dns.ResourceClass.IN, answer.class);
     try testing.expectEqual(@as(i32, 300), answer.ttl);
 
-    const resource_data = try dns.ResourceData.fromOpaque(.A, answer.opaque_rdata);
+    const resource_data = try dns.ResourceData.fromOpaque(
+        pkt,
+        .A,
+        answer.opaque_rdata,
+        std.testing.allocator,
+    );
+    defer resource_data.deinit(std.testing.allocator);
+
     try testing.expectEqual(dns.ResourceType.A, @as(dns.ResourceType, resource_data));
 
     const addr = @ptrCast(*const [4]u8, &resource_data.A.in.sa.addr).*;
@@ -223,7 +230,7 @@ test "resources have good sizes" {
         .typ = .A,
         .class = .IN,
         .ttl = 300,
-        .opaque_rdata = "",
+        .opaque_rdata = .{ .data = "", .current_byte_count = 0 },
     };
 
     var buf: [256]u8 = undefined;
@@ -232,7 +239,7 @@ test "resources have good sizes" {
 
     // name + rr (2) + class (2) + ttl (4) + rdlength (2)
     try testing.expectEqual(
-        @as(usize, name.networkSize() + 10 + resource.opaque_rdata.len),
+        @as(usize, name.networkSize() + 10 + resource.opaque_rdata.data.len),
         network_size,
     );
 }
@@ -266,7 +273,7 @@ test "rdata serialization" {
             .typ = .A,
             .class = .IN,
             .ttl = 300,
-            .opaque_rdata = opaque_rdata,
+            .opaque_rdata = .{ .data = opaque_rdata, .current_byte_count = 0 },
         }},
         .nameservers = &[_]dns.Resource{},
         .additionals = &[_]dns.Resource{},
