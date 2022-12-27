@@ -1,5 +1,7 @@
 const std = @import("std");
 
+const logger = std.log.scoped(.dns_enums);
+
 /// Represents a DNS type.
 /// Keep in mind this enum does not declare all possible DNS types.
 pub const ResourceType = enum(u16) {
@@ -23,6 +25,7 @@ pub const ResourceType = enum(u16) {
     AAAA = 28,
     // TODO LOC = 29, (check if it's worth it. https://tools.ietf.org/html/rfc1876)
     SRV = 33,
+    OPT = 41,
 
     // those types are only valid in request packets. they may be wanted
     // later on for completeness, but for now, it's more hassle than it's worth.
@@ -35,9 +38,11 @@ pub const ResourceType = enum(u16) {
     // trying to get it non-exhaustive gives "TODO @tagName on non-exhaustive enum https://github.com/ziglang/zig/issues/3991"
     //_,
 
+    const Self = @This();
+
     /// Try to convert a given string (case-insensitive compare) to an
     /// integer representing a Type.
-    pub fn fromString(str: []const u8) error{InvalidResourceType}!@This() {
+    pub fn fromString(str: []const u8) error{InvalidResourceType}!Self {
         // this returned Overflow but i think InvalidResourceType is also valid
         // considering we dont have resource types that are more than 10
         // characters long.
@@ -52,17 +57,28 @@ pub const ResourceType = enum(u16) {
 
         const uppercased = buffer[0..str.len];
 
-        const type_info = @typeInfo(@This()).Enum;
+        const type_info = @typeInfo(Self).Enum;
         inline for (type_info.fields) |field| {
             if (std.mem.eql(u8, uppercased, field.name)) {
-                return @intToEnum(@This(), field.value);
+                return @intToEnum(Self, field.value);
             }
         }
 
         return error.InvalidResourceType;
     }
 
-    pub fn writeTo(self: @This(), writer: anytype) !usize {
+    pub fn readFrom(reader: anytype) !Self {
+        const resource_type_int = try reader.readIntBig(u16);
+        return std.meta.intToEnum(Self, resource_type_int) catch |err| {
+            logger.err(
+                "unknown resource type {d}, got {s}",
+                .{ resource_type_int, @errorName(err) },
+            );
+            return err;
+        };
+    }
+
+    pub fn writeTo(self: Self, writer: anytype) !usize {
         try writer.writeIntBig(u16, @enumToInt(self));
         return 16 / 8;
     }

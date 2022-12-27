@@ -586,7 +586,8 @@ pub const Packet = struct {
         var i: usize = 0;
         while (i < resource_count) : (i += 1) {
             var name = try self.readName(reader, allocator, .{});
-            var typ = try reader.readEnum(ResourceType, .Big);
+
+            var typ = try ResourceType.readFrom(reader);
             var class = try reader.readEnum(ResourceClass, .Big);
             var ttl = try reader.readIntBig(i32);
             var opaque_rdata = try Self.readResourceDataFrom(reader, allocator);

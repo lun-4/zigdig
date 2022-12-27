@@ -68,6 +68,7 @@ pub const ResourceData = union(Type) {
     TXT: []const u8,
 
     SRV: SRVData,
+    OPT: void, // EDNS0 is not implemented
 
     const Self = @This();
 
