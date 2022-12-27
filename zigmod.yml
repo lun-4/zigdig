@@ -1,0 +1,6 @@
+id: zsu7cmhy4r867qqklav1yjl4ww8dvyvlkndwv0k8t6b0sv6c
+name: zigdig
+main: src/lib.zig
+license: MIT
+description: A naively implemented DNS library for Zig
+dependencies:
