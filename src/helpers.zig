@@ -215,6 +215,10 @@ const AddressList = struct {
     }
 };
 
+/// A very simple getAddressList that sets up the DNS connection and extracts
+/// the A records.
+///
+/// This function does not implement the "happy eyeballs" algorithm.
 pub fn getAddressList(incoming_name: []const u8, allocator: std.mem.Allocator) !AddressList {
     var name_buffer: [128][]const u8 = undefined;
     const name = try dns.Name.fromString(incoming_name, &name_buffer);
@@ -250,8 +254,17 @@ pub fn getAddressList(incoming_name: []const u8, allocator: std.mem.Allocator) !
 
     const reply_packet = reply.packet;
 
-    std.debug.assert(packet.header.id == reply_packet.header.id);
-    std.debug.assert(reply_packet.header.is_response);
+    if (packet.header.id != reply_packet.header.id) return error.InvalidReply;
+    if (!reply_packet.header.is_response) return error.InvalidResponse;
+
+    switch (reply_packet.header.response_code) {
+        .NoError => {},
+        .FormatError => return error.ServerFormatError, // bug in implementation caught by server?
+        .ServerFailure => return error.ServerFailure,
+        .NameError => return error.ServerNameError,
+        .NotImplemented => return error.ServerNotImplemented,
+        .Refused => return error.ServerRefused,
+    }
 
     var list = std.ArrayList(std.net.Address).init(allocator);
     defer list.deinit();
