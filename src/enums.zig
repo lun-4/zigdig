@@ -25,6 +25,9 @@ pub const ResourceType = enum(u16) {
     AAAA = 28,
     // TODO LOC = 29, (check if it's worth it. https://tools.ietf.org/html/rfc1876)
     SRV = 33,
+
+    // https://www.rfc-editor.org/rfc/rfc6891#section-6
+    //    The OPT RR has RR type 41.
     OPT = 41,
 
     // those types are only valid in request packets. they may be wanted
