@@ -246,6 +246,9 @@ pub const Packet = struct {
     nameservers: []Resource,
     additionals: []Resource,
 
+    /// Names that are held in RDATA sections are added here.
+    ///
+    /// This is an internal field that shouldn't be used by API consumers.
     extra_names: ?NameList = null,
 
     const Self = @This();

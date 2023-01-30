@@ -116,10 +116,19 @@ pub const DNSConnection = struct {
         );
     }
 
+    /// Deserializes and allocates an *entire* DNS packet.
+    ///
+    /// This function is not encouraged if you only wish to get A/AAAA
+    /// records for a domain name through the system DNS resolver, as this
+    /// allocates all the data of the packet. Use `receiveTrustedAddresses`
+    /// for such.
     pub fn receivePacket(
         self: Self,
         packet_allocator: std.mem.Allocator,
+        /// Maximum size for the incoming UDP datagram
         comptime max_incoming_message_size: usize,
+        /// Options for resource resolution
+        comptime resource_resolution_options: dns.ResourceResolutionOptions,
     ) !dns.IncomingPacket {
         var packet_buffer: [max_incoming_message_size]u8 = undefined;
         const read_bytes = try self.socket.read(&packet_buffer);
@@ -127,7 +136,30 @@ pub const DNSConnection = struct {
         logger.debug("read {d} bytes", .{read_bytes});
 
         var stream = std.io.FixedBufferStream([]const u8){ .buffer = packet_bytes, .pos = 0 };
-        return try dns.Packet.readFrom(stream.reader(), packet_allocator);
+
+        var parser = dns.Parser.init(stream.reader());
+        var name_pool = dns.NamePool.init(packet_allocator);
+        errdefer name_pool.deinit();
+
+        var packet = try packet_allocator.create(dns.Packet);
+        var incoming_packet = dns.IncomingPacket{ .packet_allocator = packet_allocator, .packet = packet };
+        errdefer incoming_packet.deinit();
+
+        var ctx = dns.DeserializationContext{
+            .fill_header = true,
+            .fill_questions = true,
+            .with_incoming_packet = incoming_packet,
+        };
+        while (try parser.next(&ctx)) |part| {
+            switch (part) {
+                .answer => |raw_answer| {
+                    var answer = try name_pool.resolve(raw_answer, resource_resolution_options);
+                    errdefer answer.deinit();
+                },
+            }
+        }
+
+        return incoming_packet;
     }
 };
 
@@ -215,6 +247,81 @@ const AddressList = struct {
     }
 };
 
+const ReceiveTrustedAddressesOptions = struct {
+    max_incoming_message_size: usize = 4096,
+    resource_resolution_options: dns.ResourceResolutionOptions = .{},
+};
+
+/// This is an optimized deserializer that is only interested in A and AAAA
+/// answers, returning a list of std.net.Address.
+///
+/// This function trusts the DNS connection to be returning answers related
+/// to the given domain sent through DNSConnection.sendPacket.
+///
+/// This, however, does not allocate the packet. It is very memory efficient
+/// in that regard.
+pub fn receiveTrustedAddresses(
+    allocator: std.mem.Allocator,
+    connection: DNSConnection,
+    /// Options to receive message and deserialize it
+    comptime options: ReceiveTrustedAddressesOptions,
+) ![]std.net.Address {
+    var packet_buffer: [options.max_incoming_message_size]u8 = undefined;
+    const read_bytes = try connection.socket.read(&packet_buffer);
+    const packet_bytes = packet_buffer[0..read_bytes];
+    logger.debug("read {d} bytes", .{read_bytes});
+
+    var stream = std.io.FixedBufferStream([]const u8){
+        .buffer = packet_bytes,
+        .pos = 0,
+    };
+
+    var parser = dns.Parser.init(stream.reader());
+
+    var addrs = std.ArrayList(std.net.Address).init(allocator);
+    errdefer addrs.deinit();
+
+    var ctx = dns.DeserializationContext{};
+    while (try parser.next(&ctx)) |part| {
+        switch (part) {
+            .header => |header| {
+                if (options.given_packet) |given_packet| {
+                    if (given_packet.header.id != header.id)
+                        return error.InvalidReply;
+                }
+
+                if (!header.is_response) return error.InvalidResponse;
+
+                switch (header.response_code) {
+                    .NoError => {},
+                    .FormatError => return error.ServerFormatError, // bug in implementation caught by server?
+                    .ServerFailure => return error.ServerFailure,
+                    .NameError => return error.ServerNameError,
+                    .NotImplemented => return error.ServerNotImplemented,
+                    .Refused => return error.ServerRefused,
+                }
+            },
+            .answer => |raw_resource| {
+                switch (raw_resource.typ) {
+                    .A, .AAAA => {
+                        var rdata = try dns.ResourceData.fromOpaque(
+                            undefined,
+                            raw_resource.typ,
+                            raw_resource.opaque_rdata,
+                        );
+                        switch (rdata) {
+                            .A, .AAAA => |addr| try addrs.append(addr),
+                        }
+                    },
+                    else => {},
+                }
+            },
+        }
+    }
+
+    return try addrs.toOwnedSlice();
+}
+
 /// A very simple getAddressList that sets up the DNS connection and extracts
 /// the A records.
 ///
@@ -249,25 +356,7 @@ pub fn getAddressList(incoming_name: []const u8, allocator: std.mem.Allocator) !
 
     try conn.sendPacket(packet);
 
-    const reply = try conn.receivePacket(allocator, 4096);
-    defer reply.deinit();
-
-    const reply_packet = reply.packet;
-
-    if (packet.header.id != reply_packet.header.id) return error.InvalidReply;
-    if (!reply_packet.header.is_response) return error.InvalidResponse;
-
-    switch (reply_packet.header.response_code) {
-        .NoError => {},
-        .FormatError => return error.ServerFormatError, // bug in implementation caught by server?
-        .ServerFailure => return error.ServerFailure,
-        .NameError => return error.ServerNameError,
-        .NotImplemented => return error.ServerNotImplemented,
-        .Refused => return error.ServerRefused,
-    }
-
-    var list = std.ArrayList(std.net.Address).init(allocator);
-    defer list.deinit();
+    return try receiveTrustedAddresses(&conn);
 
     for (reply_packet.answers) |resource| {
         var resource_data = try dns.ResourceData.fromOpaque(
