@@ -26,6 +26,11 @@ pub fn build(b: *Builder) void {
     exe.setBuildMode(mode);
     if (option_libc) exe.linkLibC();
 
+    const exe_host = b.addExecutable("tinyhost", "src/main_tinyhost.zig");
+    exe_host.setTarget(target);
+    exe_host.setBuildMode(mode);
+    if (option_libc) exe_host.linkLibC();
+
     const lib = b.addStaticLibrary("zigdig", "src/lib.zig");
     lib.setTarget(target);
     lib.setBuildMode(mode);

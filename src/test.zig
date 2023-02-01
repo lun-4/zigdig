@@ -9,7 +9,7 @@ const Packet = dns.Packet;
 test "convert domain string to dns name" {
     const domain = "www.google.com";
     var name_buffer: [3][]const u8 = undefined;
-    var name = try dns.Name.fromString(domain[0..], &name_buffer);
+    var name = (try dns.Name.fromString(domain[0..], &name_buffer)).full;
     std.debug.assert(name.labels.len == 3);
     try std.testing.expect(std.mem.eql(u8, name.labels[0], "www"));
     try std.testing.expect(std.mem.eql(u8, name.labels[1], "google"));
@@ -197,11 +197,11 @@ fn serialTest(packet: Packet, write_buffer: []u8) ![]u8 {
 const FixedStream = std.io.FixedBufferStream([]const u8);
 fn deserialTest(packet_data: []const u8) !dns.IncomingPacket {
     var stream = FixedStream{ .buffer = packet_data, .pos = 0 };
-    const incoming_packet = try dns.Packet.readFrom(
+    return try dns.helpers.parseFullPacket(
         stream.reader(),
         std.testing.allocator,
+        .{},
     );
-    return incoming_packet;
 }
 
 test "convert string to dns type" {
@@ -239,7 +239,7 @@ test "resources have good sizes" {
 
     // name + rr (2) + class (2) + ttl (4) + rdlength (2)
     try testing.expectEqual(
-        @as(usize, name.networkSize() + 10 + resource.opaque_rdata.data.len),
+        @as(usize, name.networkSize() + 10 + resource.opaque_rdata.?.data.len),
         network_size,
     );
 }

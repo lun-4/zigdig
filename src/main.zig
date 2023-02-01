@@ -64,7 +64,7 @@ pub fn main() !void {
 
     try conn.sendPacket(packet);
 
-    const reply = try conn.receivePacket(allocator, 4096);
+    const reply = try conn.receiveFullPacket(allocator, 4096, .{});
     defer reply.deinit();
 
     const reply_packet = reply.packet;
