@@ -1,7 +1,7 @@
 const std = @import("std");
 const dns = @import("lib.zig");
 
-const logger = std.log.scoped(.dns_packet);
+const logger = std.log.scoped(.dns_parser);
 
 pub fn parser(
     reader: anytype,

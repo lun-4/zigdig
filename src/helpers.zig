@@ -154,11 +154,12 @@ pub fn parseFullPacket(
     comptime options: dns.ParserOptions,
 ) !dns.IncomingPacket {
     var packet = try allocator.create(dns.Packet);
+    packet.extra_names = null;
+    errdefer allocator.destroy(packet);
     var incoming_packet = dns.IncomingPacket{
         .allocator = allocator,
         .packet = packet,
     };
-    // TODO errdefer incoming_packet.deinit();
 
     var parser = dns.parser(reader, options);
     //TODO var name_pool = dns.NamePool.init(allocator);

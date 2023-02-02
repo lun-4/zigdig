@@ -1,6 +1,8 @@
 const std = @import("std");
 const dns = @import("lib.zig");
 
+const logger = std.log.scoped(.dns_name);
+
 pub const LabelComponent = union(enum) {
     Full: []const u8,
     /// Holds the first offset component of that pointer.
@@ -41,18 +43,37 @@ pub const Name = union(enum) {
         reader: anytype,
         options: dns.ParserOptions,
     ) !?Self {
+        const current_byte_index = reader.context.ctx.current_byte_count;
+
         if (options.allocator) |allocator| {
             var components = std.ArrayList(LabelComponent).init(allocator);
             defer components.deinit();
+
+            var is_raw: bool = false;
 
             while (true) {
                 if (components.items.len > options.max_label_size)
                     return error.Overflow;
 
-                try components.append((try Self.readLabelComponent(reader, allocator)).?);
+                const component = (try Self.readLabelComponent(reader, allocator)).?;
+                logger.debug("read name: component {}", .{component});
+                try components.append(component);
+                switch (component) {
+                    .Null => break,
+                    .Pointer => is_raw = true,
+                    else => {},
+                }
             }
 
-            return .{ .raw = try components.toOwnedSlice() };
+            return if (is_raw) .{ .raw = .{
+                .labels = try components.toOwnedSlice(),
+            } } else .{
+                .full = try FullName.fromAssumedComponents(
+                    allocator,
+                    try components.toOwnedSlice(),
+                    current_byte_index,
+                ),
+            };
         } else {
             // skip the name in the reader
             var name_index: usize = 0;
@@ -61,7 +82,11 @@ pub const Name = union(enum) {
                 if (name_index > options.max_label_size)
                     return error.Overflow;
 
-                _ = try Self.readLabelComponent(reader, null);
+                var maybe_component = try Self.readLabelComponent(reader, null);
+                if (maybe_component) |component| switch (component) {
+                    .Null => break,
+                    else => {},
+                };
             }
 
             return null;
@@ -112,9 +137,14 @@ pub const Name = union(enum) {
             if (maybe_allocator) |allocator| {
                 var label = try allocator.alloc(u8, possible_length);
                 const read_bytes = try reader.read(label);
+                if (read_bytes != label.len) logger.err(
+                    "possible_length = {d} read_bytes = {d} label.len = {d}",
+                    .{ possible_length, read_bytes, label.len },
+                );
                 std.debug.assert(read_bytes == label.len);
                 return LabelComponent{ .Full = label };
             } else {
+                logger.debug("read_name: skip {d} bytes as no alloc", .{possible_length});
                 try reader.skipBytes(possible_length, .{});
                 return null;
             }
@@ -158,6 +188,26 @@ pub const FullName = struct {
     packet_index: ?usize = null,
 
     const Self = @This();
+
+    pub fn fromAssumedComponents(
+        allocator: std.mem.Allocator,
+        components: []LabelComponent,
+        packet_index: ?usize,
+    ) !Self {
+        var labels = std.ArrayList([]const u8).init(allocator);
+        defer labels.deinit();
+
+        for (components) |component| switch (component) {
+            .Full => |data| try labels.append(data),
+            .Pointer => unreachable,
+            .Null => break,
+        };
+
+        return Self{
+            .labels = try labels.toOwnedSlice(),
+            .packet_index = packet_index,
+        };
+    }
 
     /// Only use this if you have manually heap allocated a Name
     /// through the internal Packet.readName function.
