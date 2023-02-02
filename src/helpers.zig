@@ -158,7 +158,7 @@ pub fn parseFullPacket(
         .allocator = allocator,
         .packet = packet,
     };
-    errdefer incoming_packet.deinit();
+    // TODO errdefer incoming_packet.deinit();
 
     var parser = dns.parser(reader, options);
     //TODO var name_pool = dns.NamePool.init(allocator);
