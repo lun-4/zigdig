@@ -202,7 +202,7 @@ fn deserialTest(packet_data: []const u8) !dns.IncomingPacket {
     return try dns.helpers.parseFullPacket(
         stream.reader(),
         std.testing.allocator,
-        .{},
+        .{ .allocator = std.testing.allocator },
     );
 }
 
