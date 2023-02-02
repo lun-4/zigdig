@@ -171,6 +171,12 @@ pub fn Parser(comptime ReaderType: type) type {
         pub fn next(self: *Self) !?ParserFrame {
             // self.state dictates what we *want* from the reader
             // at the moment, first state always being header.
+            logger.debug("next(): enter {}", .{self.state});
+
+            defer {
+                logger.debug("next(): exit {}", .{self.state});
+            }
+
             switch (self.state) {
                 .header => {
                     // since header is constant size, store it
@@ -178,28 +184,35 @@ pub fn Parser(comptime ReaderType: type) type {
                     const header = try dns.Header.readFrom(self.reader);
                     self.ctx.header = header;
                     self.state = .question;
+                    logger.debug(
+                        "next(): header read ({?}). state is now {}",
+                        .{ self.ctx.header, self.state },
+                    );
                     return ParserFrame{ .header = header };
                 },
                 .question => {
-                    const raw_question = try dns.Question.readFrom(self.reader, self.options);
+                    logger.debug("next(): read {d} out of {d} questions", .{
+                        self.ctx.current_counts.question,
+                        self.ctx.header.?.question_length,
+                    });
+
                     self.ctx.current_counts.question += 1;
+
                     if (self.ctx.current_counts.question > self.ctx.header.?.question_length) {
                         self.state = .answer;
                         return ParserFrame{ .end_question = {} };
                     } else {
+                        const raw_question = try dns.Question.readFrom(self.reader, self.options);
                         return ParserFrame{ .question = raw_question };
                     }
                 },
                 .answer, .nameserver, .additional => {
-                    const raw_resource = try dns.Resource.readFrom(self.reader, self.options);
-
                     var count_holder = (switch (self.state) {
                         .answer => &self.ctx.current_counts.answer,
                         .nameserver => &self.ctx.current_counts.nameserver,
                         .additional => &self.ctx.current_counts.additional,
                         else => unreachable,
                     });
-                    count_holder.* += 1;
 
                     const header_count = switch (self.state) {
                         .answer => self.ctx.header.?.answer_length,
@@ -207,6 +220,12 @@ pub fn Parser(comptime ReaderType: type) type {
                         .additional => self.ctx.header.?.additional_length,
                         else => unreachable,
                     };
+
+                    logger.debug("next(): read {d} out of {d} resources", .{
+                        count_holder.*, header_count,
+                    });
+
+                    count_holder.* += 1;
 
                     if (count_holder.* > header_count) {
                         const old_state = self.state;
@@ -224,6 +243,8 @@ pub fn Parser(comptime ReaderType: type) type {
                             else => unreachable,
                         };
                     } else {
+                        const raw_resource = try dns.Resource.readFrom(self.reader, self.options);
+
                         // not at end yet, which means resource_rdata event
                         // must happen if we don't have allocator
 
