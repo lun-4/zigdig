@@ -51,7 +51,7 @@ pub fn printAsZoneFile(packet: *dns.Packet, allocator: std.mem.Allocator, writer
         try writer.print(";;name\ttype\tclass\n", .{});
 
         for (packet.questions) |question| {
-            try writer.print(";{s}\t{s}\t{s}\n", .{
+            try writer.print(";{?}\t{s}\t{s}\n", .{
                 question.name,
                 @tagName(question.typ),
                 @tagName(question.class),
@@ -189,15 +189,14 @@ pub fn parseFullPacket(
                 current_resource = resource;
             },
             .answer_rdata, .nameserver_rdata, .additional_rdata => |rdata| {
-                current_resource.?.opaque_rdata = try rdata.readAll(allocator);
+                current_resource.?.opaque_rdata = try rdata.readAllAlloc(allocator, parser.reader);
                 defer current_resource = null;
-                try answers.append(current_resource);
-
                 try (switch (part) {
-                    .answer => answers,
-                    .nameserver => nameservers,
-                    .additional => additionals,
-                }).append(current_resource);
+                    .answer_rdata => answers,
+                    .nameserver_rdata => nameservers,
+                    .additional_rdata => additionals,
+                    else => unreachable,
+                }).append(current_resource.?);
             },
             .end_answer => packet.answers = try answers.toOwnedSlice(),
             .end_nameserver => packet.nameservers = try nameservers.toOwnedSlice(),
@@ -321,15 +320,14 @@ pub fn receiveTrustedAddresses(
         .pos = 0,
     };
 
-    var parser = dns.Parser.init(stream.reader());
+    var parser = dns.parser(stream.reader());
 
     var addrs = std.ArrayList(std.net.Address).init(allocator);
     errdefer addrs.deinit();
 
     var current_resource: ?dns.Resource = null;
 
-    var ctx = dns.DeserializationContext{};
-    while (try parser.next(&ctx)) |part| {
+    while (try parser.next()) |part| {
         switch (part) {
             .header => |header| {
                 if (options.given_packet) |given_packet| {
@@ -357,15 +355,18 @@ pub fn receiveTrustedAddresses(
                 var maybe_addr = switch (current_resource.?.typ) {
                     .A => blk: {
                         var ip4addr: [4]u8 = undefined;
-                        _ = try rdata.read(&ip4addr);
+                        _ = try parser.reader.read(&ip4addr);
                         break :blk std.net.Address.initIp4(ip4addr, 0);
                     },
                     .AAAA => blk: {
                         var ip6_addr: [16]u8 = undefined;
-                        _ = try rdata.read(&ip6_addr);
+                        _ = try parser.reader.read(&ip6_addr);
                         break :blk std.net.Address.initIp6(ip6_addr, 0, 0, 0);
                     },
-                    else => null,
+                    else => blk: {
+                        try rdata.skip();
+                        break :blk null;
+                    },
                 };
 
                 if (maybe_addr) |addr| try addrs.append(addr);

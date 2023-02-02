@@ -39,18 +39,17 @@ pub const Name = union(enum) {
     /// Caller owns returned memory.
     pub fn readFrom(
         reader: anytype,
-        parse_options: dns.ParserOptions,
-        options: ReadNameOptions,
+        options: dns.ParserOptions,
     ) !?Self {
-        if (parse_options.allocator) |allocator| {
+        if (options.allocator) |allocator| {
             var components = std.ArrayList(LabelComponent).init(allocator);
             defer components.deinit();
 
             while (true) {
-                if (components.items.len > options.max_label_count)
+                if (components.items.len > options.max_label_size)
                     return error.Overflow;
 
-                try components.append(try Self.readLabelComponent(reader, allocator));
+                try components.append((try Self.readLabelComponent(reader, allocator)).?);
             }
 
             return .{ .raw = try components.toOwnedSlice() };
@@ -59,7 +58,7 @@ pub const Name = union(enum) {
             var name_index: usize = 0;
 
             while (true) {
-                if (name_index > options.max_label_count)
+                if (name_index > options.max_label_size)
                     return error.Overflow;
 
                 _ = try Self.readLabelComponent(reader, null);
@@ -76,7 +75,7 @@ pub const Name = union(enum) {
     fn readLabelComponent(
         reader: anytype,
         maybe_allocator: ?std.mem.Allocator,
-    ) !LabelComponent {
+    ) !?LabelComponent {
         // pointers, in the binary representation of a byte, are as follows
         //  1 1 B B B B B B | B B B B B B B B
         // they are two bytes length, but to identify one, you check if the
@@ -116,7 +115,7 @@ pub const Name = union(enum) {
                 std.debug.assert(read_bytes == label.len);
                 return LabelComponent{ .Full = label };
             } else {
-                try reader.skipBytes(possible_length);
+                try reader.skipBytes(possible_length, .{});
                 return null;
             }
         }

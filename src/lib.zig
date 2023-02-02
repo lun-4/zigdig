@@ -16,10 +16,10 @@ pub const Question = pkt.Question;
 pub const Resource = pkt.Resource;
 pub const Header = pkt.Header;
 
-const parser_lib = @import("parser.zig");
-pub const parser = parser_lib.parser;
-pub const Parser = parser_lib.Parser;
-pub const ParserOptions = parser_lib.ParserOptions;
+pub const parserlib = @import("parser.zig");
+pub const parser = parserlib.parser;
+pub const Parser = parserlib.Parser;
+pub const ParserOptions = parserlib.ParserOptions;
 
 pub const helpers = @import("helpers.zig");
 

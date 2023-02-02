@@ -40,35 +40,62 @@ pub const NamePool = struct {
 const ParserState = enum {
     header,
     question,
-    end_question,
     answer,
-    end_answer,
     nameserver,
-    end_nameserver,
     additional,
-    end_additional,
+    answer_rdata,
+    nameserver_rdata,
+    additional_rdata,
+    done,
 };
 
-pub const ParserFrame = union(ParserState) {
+pub const ParserFrame = union(enum) {
     header: dns.Header,
 
     question: dns.Question,
     end_question: void,
 
     answer: dns.Resource,
+    answer_rdata: dns.parserlib.ResourceDataHolder,
     end_answer: void,
 
     nameserver: dns.Resource,
+    nameserver_rdata: dns.parserlib.ResourceDataHolder,
     end_nameserver: void,
 
     additional: dns.Resource,
+    additional_rdata: dns.parserlib.ResourceDataHolder,
     end_additional: void,
 };
 
+pub const ResourceDataHolder = struct {
+    size: usize,
+    current_byte_index: usize,
+
+    pub fn skip(self: @This(), reader: anytype) !void {
+        try reader.skipBytes(self.size, .{});
+    }
+
+    pub fn readAllAlloc(
+        self: @This(),
+        allocator: std.mem.Allocator,
+        reader: anytype,
+    ) !dns.ResourceData.Opaque {
+        var opaque_rdata = try allocator.alloc(u8, self.size);
+        const read_bytes = try reader.read(opaque_rdata);
+        std.debug.assert(read_bytes == opaque_rdata.len);
+        return .{
+            .data = opaque_rdata,
+            .current_byte_count = self.current_byte_index,
+        };
+    }
+};
+
 pub const ParserOptions = struct {
-    header_aware: bool = true,
     /// Give an allocator if you want names to appear properly.
     allocator: ?std.mem.Allocator = null,
+
+    max_label_size: usize = 32,
 };
 
 const ParserContext = struct {
@@ -119,8 +146,7 @@ pub fn Parser(comptime ReaderType: type) type {
     const WrapperR = WrapperReader(ReaderType);
 
     return struct {
-        // null means end of packet
-        state: ?ParserState = .header,
+        state: ParserState = .header,
         reader: WrapperR.Reader,
         options: ParserOptions,
         ctx: ParserContext,
@@ -145,7 +171,7 @@ pub fn Parser(comptime ReaderType: type) type {
         pub fn next(self: *Self) !?ParserFrame {
             // self.state dictates what we *want* from the reader
             // at the moment, first state always being header.
-            if (self.state) |state| switch (state) {
+            switch (self.state) {
                 .header => {
                     // since header is constant size, store it
                     // in our parser state so we know how to continue
@@ -159,24 +185,36 @@ pub fn Parser(comptime ReaderType: type) type {
                     self.ctx.current_counts.question += 1;
                     if (self.ctx.current_counts.question > self.ctx.header.?.question_length) {
                         self.state = .answer;
-                        return ParserState{ .end_question = .{} };
+                        return ParserFrame{ .end_question = {} };
                     } else {
                         return ParserFrame{ .question = raw_question };
                     }
                 },
-                .end_question, .end_answer, .end_nameserver, .end_additional => unreachable,
                 .answer, .nameserver, .additional => {
                     const raw_resource = try dns.Resource.readFrom(self.reader, self.options);
 
-                    const name = @tagName(self.state);
-                    @field(self.ctx.current_counts.question, name) += 1;
+                    var count_holder = (switch (self.state) {
+                        .answer => &self.ctx.current_counts.answer,
+                        .nameserver => &self.ctx.current_counts.nameserver,
+                        .additional => &self.ctx.current_counts.additional,
+                        else => unreachable,
+                    });
+                    count_holder.* += 1;
 
-                    if (@field(self.ctx.current_counts.question, name) > @field(self.ctx.header.?, name ++ "_length")) {
+                    const header_count = switch (self.state) {
+                        .answer => self.ctx.header.?.answer_length,
+                        .nameserver => self.ctx.header.?.nameserver_length,
+                        .additional => self.ctx.header.?.additional_length,
+                        else => unreachable,
+                    };
+
+                    if (count_holder.* > header_count) {
                         const old_state = self.state;
                         self.state = switch (self.state) {
                             .answer => .nameserver,
                             .nameserver => .additional,
-                            .additional => null,
+                            .additional => .done,
+                            else => unreachable,
                         };
 
                         return switch (old_state) {
@@ -186,7 +224,22 @@ pub fn Parser(comptime ReaderType: type) type {
                             else => unreachable,
                         };
                     } else {
-                        return switch (self.state) {
+                        // not at end yet, which means resource_rdata event
+                        // must happen if we don't have allocator
+
+                        const old_state = self.state;
+
+                        // if we don't have allocator, we emit rdata records
+                        if (self.options.allocator == null) {
+                            self.state = switch (self.state) {
+                                .answer => .answer_rdata,
+                                .nameserver => .nameserver_rdata,
+                                .additional => .additional_rdata,
+                                else => unreachable,
+                            };
+                        }
+
+                        return switch (old_state) {
                             .answer => ParserFrame{ .answer = raw_resource },
                             .nameserver => ParserFrame{ .nameserver = raw_resource },
                             .additional => ParserFrame{ .additional = raw_resource },
@@ -194,8 +247,33 @@ pub fn Parser(comptime ReaderType: type) type {
                         };
                     }
                 },
-            } else {
-                return null;
+
+                .answer_rdata, .nameserver_rdata, .additional_rdata => {
+                    const old_state = self.state;
+
+                    self.state = switch (self.state) {
+                        .answer_rdata => .answer,
+                        .nameserver_rdata => .nameserver,
+                        .additional_rdata => .additional,
+                        else => unreachable,
+                    };
+
+                    const rdata_length = try self.reader.readIntBig(u16);
+                    const rdata_index = self.reader.context.ctx.current_byte_count;
+                    var rdata = ResourceDataHolder{
+                        .size = rdata_length,
+                        .current_byte_index = rdata_index,
+                    };
+
+                    return switch (old_state) {
+                        .answer_rdata => ParserFrame{ .answer_rdata = rdata },
+                        .nameserver_rdata => ParserFrame{ .nameserver_rdata = rdata },
+                        .additional_rdata => ParserFrame{ .additional_rdata = rdata },
+                        else => unreachable,
+                    };
+                },
+
+                .done => return null,
             }
         }
     };

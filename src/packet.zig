@@ -189,11 +189,11 @@ pub const Resource = struct {
         reader: anytype,
         options: dns.ParserOptions,
     ) !?dns.ResourceData.Opaque {
-        const rdata_length = try reader.readIntBig(u16);
-
         if (options.allocator) |allocator| {
-            var opaque_rdata = try allocator.alloc(u8, rdata_length);
+            const rdata_length = try reader.readIntBig(u16);
             const rdata_index = reader.context.ctx.current_byte_count;
+
+            var opaque_rdata = try allocator.alloc(u8, rdata_length);
             const read_bytes = try reader.read(opaque_rdata);
             std.debug.assert(read_bytes == opaque_rdata.len);
             return .{
@@ -201,12 +201,11 @@ pub const Resource = struct {
                 .current_byte_count = rdata_index,
             };
         } else {
-            try reader.skipBytes(rdata_length);
             return null;
         }
     }
 
-    pub fn readFrom(reader: anytype, options: dns.helpers.ParseOptions) !Self {
+    pub fn readFrom(reader: anytype, options: dns.ParserOptions) !Self {
         var name = try Name.readFrom(reader, options);
         var typ = try ResourceType.readFrom(reader);
         var class = try reader.readEnum(ResourceClass, .Big);
@@ -550,8 +549,7 @@ pub const IncomingPacket = struct {
 
     fn freeResource(self: @This(), resource: Resource) void {
         if (resource.name) |name| name.deinit(self.allocator);
-        self.allocator.free(resource.name.labels);
-        self.allocator.free(resource.opaque_rdata.?.data);
+        if (resource.opaque_rdata) |opaque_rdata| self.allocator.free(opaque_rdata.data);
     }
 
     fn freeResourceList(self: @This(), resource_list: []Resource) void {
@@ -562,7 +560,6 @@ pub const IncomingPacket = struct {
     pub fn deinit(self: @This()) void {
         for (self.packet.questions) |question| {
             if (question.name) |name| name.deinit(self.allocator);
-            self.allocator.free(question.name.labels);
         }
 
         self.allocator.free(self.packet.questions);
