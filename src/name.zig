@@ -30,11 +30,18 @@ pub const Name = union(enum) {
 
     pub fn deinit(self: Self, allocator: std.mem.Allocator) void {
         switch (self) {
-            .raw => |raw| for (raw.labels) |label| switch (label) {
-                .Full => |data| allocator.free(data),
-                else => {},
+            .raw => |raw| {
+                for (raw.labels) |label| switch (label) {
+                    .Full => |data| allocator.free(data),
+                    else => {},
+                };
+
+                allocator.free(raw.labels);
             },
-            .full => |full| for (full.labels) |label| allocator.free(label),
+            .full => |full| {
+                for (full.labels) |label| allocator.free(label);
+                allocator.free(full.labels);
+            },
         }
     }
 
@@ -117,6 +124,10 @@ pub const Name = union(enum) {
         // length can only be a single byte.
         //
         // if the length is 0, its a null octet
+        logger.debug(
+            "reading label component at {d} bytes",
+            .{reader.context.ctx.current_byte_count},
+        );
         var possible_length = try reader.readIntBig(u8);
         if (possible_length == 0) return LabelComponent{ .Null = {} };
 

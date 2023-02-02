@@ -77,7 +77,7 @@ fn expectGoogleLabels(actual: [][]const u8) !void {
     }
 }
 
-test "deserialization of original google.com/A" {
+test "deserialization of original question google.com/A" {
     var write_buffer: [0x10000]u8 = undefined;
 
     var decoded = try decodeBase64(TEST_PKT_QUERY, &write_buffer);
@@ -102,6 +102,7 @@ test "deserialization of original google.com/A" {
 }
 
 test "deserialization of reply google.com/A" {
+    std.testing.log_level = .debug;
     var encode_buffer: [0x10000]u8 = undefined;
     var decoded = try decodeBase64(TEST_PKT_RESPONSE, &encode_buffer);
 

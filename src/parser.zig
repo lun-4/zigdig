@@ -5,9 +5,10 @@ const logger = std.log.scoped(.dns_parser);
 
 pub fn parser(
     reader: anytype,
+    ctx: *ParserContext,
     options: dns.ParserOptions,
 ) Parser(@TypeOf(reader)) {
-    return Parser(@TypeOf(reader)).init(reader, options);
+    return Parser(@TypeOf(reader)).init(reader, ctx, options);
 }
 
 fn Output(typ: type) type {
@@ -98,7 +99,7 @@ pub const ParserOptions = struct {
     max_label_size: usize = 32,
 };
 
-const ParserContext = struct {
+pub const ParserContext = struct {
     header: ?dns.Header = null,
     current_byte_count: usize = 0,
     current_counts: struct {
@@ -130,6 +131,10 @@ pub fn WrapperReader(comptime ReaderType: anytype) type {
         pub fn read(self: *Self, buffer: []u8) !usize {
             const bytes_read = try self.underlying_reader.read(buffer);
             self.ctx.current_byte_count += bytes_read;
+            logger.debug(
+                "wrapper reader: read {d} bytes, now at {d}",
+                .{ bytes_read, self.ctx.current_byte_count },
+            );
             return bytes_read;
         }
 
@@ -149,20 +154,20 @@ pub fn Parser(comptime ReaderType: type) type {
         state: ParserState = .header,
         reader: WrapperR.Reader,
         options: ParserOptions,
-        ctx: ParserContext,
+        ctx: *ParserContext,
 
         const Self = @This();
 
-        pub fn init(incoming_reader: ReaderType, options: ParserOptions) Self {
+        pub fn init(incoming_reader: ReaderType, ctx: *ParserContext, options: ParserOptions) Self {
             var self = Self{
                 .reader = undefined,
                 .options = options,
-                .ctx = .{},
+                .ctx = ctx,
             };
 
             var wrapper_reader = WrapperR{
                 .underlying_reader = incoming_reader,
-                .ctx = &self.ctx,
+                .ctx = ctx,
             };
             self.reader = wrapper_reader.reader();
             return self;
@@ -173,8 +178,26 @@ pub fn Parser(comptime ReaderType: type) type {
             // at the moment, first state always being header.
             logger.debug("next(): enter {}", .{self.state});
 
+            logger.debug(
+                "parser reader is index at {d} bytes",
+                .{self.reader.context.ctx.current_byte_count},
+            );
+            logger.debug(
+                "reader ctx: {}. self ctx = {}",
+                .{ self.reader.context.ctx, self.ctx },
+            );
+
             defer {
-                logger.debug("next(): exit {}", .{self.state});
+                logger.debug("EXIT", .{});
+
+                logger.debug(
+                    "parser reader is index at {d} bytes ({d})",
+                    .{ self.reader.context.ctx.current_byte_count, self.ctx.current_byte_count },
+                );
+                logger.debug(
+                    "reader ctx: {}. self ctx = {}",
+                    .{ self.reader.context.ctx, self.ctx },
+                );
             }
 
             switch (self.state) {
@@ -200,9 +223,13 @@ pub fn Parser(comptime ReaderType: type) type {
 
                     if (self.ctx.current_counts.question > self.ctx.header.?.question_length) {
                         self.state = .answer;
+                        logger.debug("parser: end question, go to resources", .{});
                         return ParserFrame{ .end_question = {} };
                     } else {
+                        logger.debug("parser: read question", .{});
                         const raw_question = try dns.Question.readFrom(self.reader, self.options);
+                        logger.debug("emit question {}", .{raw_question});
+                        logger.debug("now at {d}", .{self.reader.context.ctx.current_byte_count});
                         return ParserFrame{ .question = raw_question };
                     }
                 },

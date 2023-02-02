@@ -20,6 +20,7 @@ pub const parserlib = @import("parser.zig");
 pub const parser = parserlib.parser;
 pub const Parser = parserlib.Parser;
 pub const ParserOptions = parserlib.ParserOptions;
+pub const ParserContext = parserlib.ParserContext;
 
 pub const helpers = @import("helpers.zig");
 

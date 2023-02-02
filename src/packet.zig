@@ -155,6 +155,11 @@ pub const Question = struct {
     const Self = @This();
 
     pub fn readFrom(reader: anytype, options: dns.ParserOptions) !Self {
+        logger.debug(
+            "reading question at {d} bytes",
+            .{reader.context.ctx.current_byte_count},
+        );
+
         var name = try Name.readFrom(reader, options);
         var qtype = try reader.readEnum(ResourceType, .Big);
         var qclass = try reader.readEnum(ResourceClass, .Big);
@@ -206,6 +211,7 @@ pub const Resource = struct {
     }
 
     pub fn readFrom(reader: anytype, options: dns.ParserOptions) !Self {
+        logger.debug("reading resource at {d} bytes", .{reader.context.ctx.current_byte_count});
         var name = try Name.readFrom(reader, options);
         var typ = try ResourceType.readFrom(reader);
         var class = try reader.readEnum(ResourceClass, .Big);

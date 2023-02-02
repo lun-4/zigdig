@@ -161,7 +161,9 @@ pub fn parseFullPacket(
         .packet = packet,
     };
 
-    var parser = dns.parser(reader, options);
+    var ctx = dns.ParserContext{};
+
+    var parser = dns.parser(reader, &ctx, options);
     //TODO var name_pool = dns.NamePool.init(allocator);
     //TODO errdefer name_pool.deinit();
 
@@ -183,7 +185,9 @@ pub fn parseFullPacket(
         switch (part) {
             .header => |header| packet.header = header,
             .question => |question| {
+                logger.debug("before append {}", .{parser.reader.context.ctx});
                 try questions.append(question);
+                logger.debug("after append {}", .{parser.reader.context.ctx});
             },
             .end_question => packet.questions = try questions.toOwnedSlice(),
             .answer, .nameserver, .additional => |resource| {
