@@ -162,7 +162,7 @@ pub const Question = struct {
 
         var name = try Name.readFrom(reader, options);
         var qtype = try reader.readEnum(ResourceType, .Big);
-        var qclass = try reader.readEnum(ResourceClass, .Big);
+        var qclass = try ResourceClass.readFrom(reader);
 
         return Self{
             .name = name,

@@ -243,6 +243,11 @@ pub fn Parser(comptime ReaderType: type) type {
                             else => unreachable,
                         };
 
+                        logger.debug(
+                            "end resource list. state transition {} -> {}",
+                            .{ old_state, self.state },
+                        );
+
                         return switch (old_state) {
                             .answer => ParserFrame{ .end_answer = {} },
                             .nameserver => ParserFrame{ .end_nameserver = {} },
@@ -266,6 +271,8 @@ pub fn Parser(comptime ReaderType: type) type {
                                 else => unreachable,
                             };
                         }
+
+                        logger.debug("resource from {}: {}", .{ old_state, raw_resource });
 
                         return switch (old_state) {
                             .answer => ParserFrame{ .answer = raw_resource },
