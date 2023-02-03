@@ -179,8 +179,6 @@ pub fn parseFullPacket(
     var additionals = std.ArrayList(dns.Resource).init(allocator);
     defer additionals.deinit();
 
-    var current_resource: ?dns.Resource = null;
-
     while (try parser.next()) |part| {
         switch (part) {
             .header => |header| packet.header = header,
@@ -189,24 +187,19 @@ pub fn parseFullPacket(
             },
             .end_question => packet.questions = try questions.toOwnedSlice(),
             .answer, .nameserver, .additional => |resource| {
-                current_resource = resource;
-            },
-            .answer_rdata, .nameserver_rdata, .additional_rdata => |rdata| {
-                current_resource.?.opaque_rdata = try rdata.readAllAlloc(
-                    allocator,
-                    parser.wrapper_reader.reader(),
-                );
-                defer current_resource = null;
+                // since we give it an allocator, we don't receive rdata
+                // sections
                 try (switch (part) {
-                    .answer_rdata => answers,
-                    .nameserver_rdata => nameservers,
-                    .additional_rdata => additionals,
+                    .answer => answers,
+                    .nameserver => nameservers,
+                    .additional => additionals,
                     else => unreachable,
-                }).append(current_resource.?);
+                }).append(resource);
             },
             .end_answer => packet.answers = try answers.toOwnedSlice(),
             .end_nameserver => packet.nameservers = try nameservers.toOwnedSlice(),
             .end_additional => packet.additionals = try additionals.toOwnedSlice(),
+            .answer_rdata, .nameserver_rdata, .additional_rdata => unreachable,
         }
     }
 
