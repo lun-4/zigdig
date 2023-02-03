@@ -67,7 +67,10 @@ pub const Name = union(enum) {
                 try components.append(component);
                 switch (component) {
                     .Null => break,
-                    .Pointer => is_raw = true,
+                    .Pointer => {
+                        is_raw = true;
+                        break;
+                    },
                     else => {},
                 }
             }
@@ -91,7 +94,7 @@ pub const Name = union(enum) {
 
                 var maybe_component = try Self.readLabelComponent(reader, null);
                 if (maybe_component) |component| switch (component) {
-                    .Null => break,
+                    .Null, .Pointer => break,
                     else => {},
                 };
             }
