@@ -152,7 +152,7 @@ pub fn Parser(comptime ReaderType: type) type {
 
     return struct {
         state: ParserState = .header,
-        reader: WrapperR.Reader,
+        wrapper_reader: WrapperR,
         options: ParserOptions,
         ctx: *ParserContext,
 
@@ -160,16 +160,14 @@ pub fn Parser(comptime ReaderType: type) type {
 
         pub fn init(incoming_reader: ReaderType, ctx: *ParserContext, options: ParserOptions) Self {
             var self = Self{
-                .reader = undefined,
+                .wrapper_reader = WrapperR{
+                    .underlying_reader = incoming_reader,
+                    .ctx = ctx,
+                },
                 .options = options,
                 .ctx = ctx,
             };
 
-            var wrapper_reader = WrapperR{
-                .underlying_reader = incoming_reader,
-                .ctx = ctx,
-            };
-            self.reader = wrapper_reader.reader();
             return self;
         }
 
@@ -179,32 +177,17 @@ pub fn Parser(comptime ReaderType: type) type {
             logger.debug("next(): enter {}", .{self.state});
 
             logger.debug(
-                "parser reader is index at {d} bytes",
-                .{self.reader.context.ctx.current_byte_count},
-            );
-            logger.debug(
-                "reader ctx: {}. self ctx = {}",
-                .{ self.reader.context.ctx, self.ctx },
+                "parser reader is at {d} bytes of message",
+                .{self.wrapper_reader.ctx.current_byte_count},
             );
 
-            defer {
-                logger.debug("EXIT", .{});
-
-                logger.debug(
-                    "parser reader is index at {d} bytes ({d})",
-                    .{ self.reader.context.ctx.current_byte_count, self.ctx.current_byte_count },
-                );
-                logger.debug(
-                    "reader ctx: {}. self ctx = {}",
-                    .{ self.reader.context.ctx, self.ctx },
-                );
-            }
+            var reader = self.wrapper_reader.reader();
 
             switch (self.state) {
                 .header => {
                     // since header is constant size, store it
                     // in our parser state so we know how to continue
-                    const header = try dns.Header.readFrom(self.reader);
+                    const header = try dns.Header.readFrom(reader);
                     self.ctx.header = header;
                     self.state = .question;
                     logger.debug(
@@ -226,10 +209,7 @@ pub fn Parser(comptime ReaderType: type) type {
                         logger.debug("parser: end question, go to resources", .{});
                         return ParserFrame{ .end_question = {} };
                     } else {
-                        logger.debug("parser: read question", .{});
-                        const raw_question = try dns.Question.readFrom(self.reader, self.options);
-                        logger.debug("emit question {}", .{raw_question});
-                        logger.debug("now at {d}", .{self.reader.context.ctx.current_byte_count});
+                        const raw_question = try dns.Question.readFrom(reader, self.options);
                         return ParserFrame{ .question = raw_question };
                     }
                 },
@@ -270,7 +250,7 @@ pub fn Parser(comptime ReaderType: type) type {
                             else => unreachable,
                         };
                     } else {
-                        const raw_resource = try dns.Resource.readFrom(self.reader, self.options);
+                        const raw_resource = try dns.Resource.readFrom(reader, self.options);
 
                         // not at end yet, which means resource_rdata event
                         // must happen if we don't have allocator
@@ -306,8 +286,8 @@ pub fn Parser(comptime ReaderType: type) type {
                         else => unreachable,
                     };
 
-                    const rdata_length = try self.reader.readIntBig(u16);
-                    const rdata_index = self.reader.context.ctx.current_byte_count;
+                    const rdata_length = try reader.readIntBig(u16);
+                    const rdata_index = reader.context.ctx.current_byte_count;
                     var rdata = ResourceDataHolder{
                         .size = rdata_length,
                         .current_byte_index = rdata_index,
