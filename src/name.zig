@@ -9,7 +9,7 @@ pub const LabelComponent = union(enum) {
     ///
     /// You still have to read a byte for the second component and assemble
     /// it into the final packet offset.
-    Pointer: u8,
+    Pointer: u16,
     Null: void,
 };
 
@@ -139,7 +139,17 @@ pub const Name = union(enum) {
         var bit2 = (possible_length & (1 << 6)) != 0;
 
         if (bit1 and bit2) {
-            return LabelComponent{ .Pointer = possible_length };
+            const second_offset_component = try reader.readIntBig(u8);
+
+            // merge them together
+            var offset: u16 = (possible_length << 7) | second_offset_component;
+
+            // set first two bits of ptr_offset to zero as they're the
+            // pointer prefix bits (which are always 1, which brings problems)
+            offset &= ~@as(u16, 1 << 15);
+            offset &= ~@as(u16, 1 << 14);
+
+            return LabelComponent{ .Pointer = offset };
         } else {
             // those must be 0 for a correct label length to be made
             std.debug.assert((!bit1) and (!bit2));
