@@ -28,6 +28,7 @@ pub fn build(b: *Builder) void {
         .optimize = optimize,
     });
     if (option_libc) exe.linkLibC();
+    exe.install();
 
     const exe_tinyhost = b.addExecutable(.{
         .name = "zigdig-tiny",
@@ -36,6 +37,7 @@ pub fn build(b: *Builder) void {
         .optimize = optimize,
     });
     if (option_libc) exe.linkLibC();
+    exe_tinyhost.install();
 
     var lib_tests = b.addTest(.{
         .root_source_file = .{ .path = "src/main.zig" },
@@ -49,8 +51,6 @@ pub fn build(b: *Builder) void {
     const run_step = b.step("run", "Run example binary");
     run_step.dependOn(&run_cmd.step);
 
-    b.default_step.dependOn(&exe.step);
-    b.default_step.dependOn(&exe_tinyhost.step);
     b.addModule(.{
         .name = "dns",
         .source_file = .{ .path = "src/lib.zig" },
