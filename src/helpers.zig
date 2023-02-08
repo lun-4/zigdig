@@ -331,10 +331,10 @@ pub fn receiveTrustedAddresses(
     while (try parser.next()) |part| {
         switch (part) {
             .header => |header| {
-                if (options.given_packet) |given_packet| {
-                    if (given_packet.header.id != header.id)
-                        return error.InvalidReply;
-                }
+                //if (options.given_packet) |given_packet| {
+                //    if (given_packet.header.id != header.id)
+                //        return error.InvalidReply;
+                //}
 
                 if (!header.is_response) return error.InvalidResponse;
 
@@ -352,26 +352,29 @@ pub fn receiveTrustedAddresses(
             },
 
             .answer_rdata => |rdata| {
+                // TODO parser.reader()
+                var reader = parser.wrapper_reader.reader();
                 defer current_resource = null;
                 var maybe_addr = switch (current_resource.?.typ) {
                     .A => blk: {
                         var ip4addr: [4]u8 = undefined;
-                        _ = try parser.reader.read(&ip4addr);
+                        _ = try reader.read(&ip4addr);
                         break :blk std.net.Address.initIp4(ip4addr, 0);
                     },
                     .AAAA => blk: {
                         var ip6_addr: [16]u8 = undefined;
-                        _ = try parser.reader.read(&ip6_addr);
+                        _ = try reader.read(&ip6_addr);
                         break :blk std.net.Address.initIp6(ip6_addr, 0, 0, 0);
                     },
                     else => blk: {
-                        try rdata.skip();
+                        try reader.skipBytes(rdata.size, .{});
                         break :blk null;
                     },
                 };
 
                 if (maybe_addr) |addr| try addrs.append(addr);
             },
+            else => {},
         }
     }
 
@@ -422,16 +425,19 @@ pub fn getAddressList(incoming_name: []const u8, allocator: std.mem.Allocator) !
     var name_buffer: [128][]const u8 = undefined;
     const name = try dns.Name.fromString(incoming_name, &name_buffer);
 
+    var final_list = std.ArrayList(std.net.Address).init(allocator);
+    errdefer final_list.deinit();
+
     var addrs_v4 = try fetchTrustedAddresses(allocator, name, .A);
-    errdefer allocator.free(addrs_v4);
+    defer allocator.free(addrs_v4);
+    for (addrs_v4) |addr| try final_list.append(addr);
 
     var addrs_v6 = try fetchTrustedAddresses(allocator, name, .AAAA);
     defer allocator.free(addrs_v6);
-
-    for (addrs_v6) |addr| try addrs_v4.append(addr);
+    for (addrs_v6) |addr| try final_list.append(addr);
 
     return AddressList{
         .allocator = allocator,
-        .addrs = addrs_v4,
+        .addrs = final_list.items,
     };
 }

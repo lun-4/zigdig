@@ -2,6 +2,9 @@ const std = @import("std");
 const dns = @import("lib.zig");
 
 const logger = std.log.scoped(.zigdig_main);
+pub const std_options = struct {
+    pub const log_level = .info;
+};
 
 pub fn main() !void {
     var gpa = std.heap.GeneralPurposeAllocator(.{}){};
@@ -19,11 +22,11 @@ pub fn main() !void {
     });
 
     var addrs = try dns.helpers.getAddressList(name_string, allocator);
-    defer allocator.free(addrs);
+    defer addrs.deinit();
 
     var stdout = std.io.getStdOut().writer();
 
-    for (addrs) |addr| {
-        try stdout.print("{} has address {}\n", .{addr});
+    for (addrs.addrs) |addr| {
+        try stdout.print("{s} has address {any}\n", .{ name_string, addr });
     }
 }
