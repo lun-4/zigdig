@@ -214,7 +214,7 @@ pub const Resource = struct {
         logger.debug("reading resource at {d} bytes", .{reader.context.ctx.current_byte_count});
         var name = try Name.readFrom(reader, options);
         var typ = try ResourceType.readFrom(reader);
-        var class = try reader.readEnum(ResourceClass, .Big);
+        var class = try ResourceClass.readFrom(reader);
         var ttl = try reader.readIntBig(i32);
         var opaque_rdata = try Self.readResourceDataFrom(reader, options);
 
