@@ -18,10 +18,7 @@ pub fn main() !void {
         return error.InvalidArgs;
     });
 
-    var name_buffer: [128][]const u8 = undefined;
-    const name = try dns.Name.fromString(name_string, &name_buffer);
-
-    var addrs = try dns.helpers.getAddressList(name, allocator);
+    var addrs = try dns.helpers.getAddressList(name_string, allocator);
     defer allocator.free(addrs);
 
     var stdout = std.io.getStdOut().writer();

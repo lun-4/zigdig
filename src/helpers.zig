@@ -292,7 +292,7 @@ const AddressList = struct {
 
 const ReceiveTrustedAddressesOptions = struct {
     max_incoming_message_size: usize = 4096,
-    resource_resolution_options: dns.ResourceResolutionOptions = .{},
+    //resource_resolution_options: dns.ResourceResolutionOptions = .{},
 };
 
 /// This is an optimized deserializer that is only interested in A and AAAA
@@ -305,7 +305,7 @@ const ReceiveTrustedAddressesOptions = struct {
 /// in that regard.
 pub fn receiveTrustedAddresses(
     allocator: std.mem.Allocator,
-    connection: DNSConnection,
+    connection: *const DNSConnection,
     /// Options to receive message and deserialize it
     comptime options: ReceiveTrustedAddressesOptions,
 ) ![]std.net.Address {
@@ -319,7 +319,9 @@ pub fn receiveTrustedAddresses(
         .pos = 0,
     };
 
-    var parser = dns.parser(stream.reader());
+    var ctx = dns.ParserContext{};
+
+    var parser = dns.parser(stream.reader(), &ctx, .{});
 
     var addrs = std.ArrayList(std.net.Address).init(allocator);
     errdefer addrs.deinit();
@@ -380,7 +382,7 @@ fn fetchTrustedAddresses(
     allocator: std.mem.Allocator,
     name: dns.Name,
     qtype: dns.ResourceType,
-) []std.net.Address {
+) ![]std.net.Address {
     var packet = dns.Packet{
         .header = .{
             .id = dns.helpers.randomHeaderId(),

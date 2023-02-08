@@ -17,26 +17,30 @@ pub fn build(b: *Builder) void {
         });
     }
 
-    const mode = b.standardReleaseOptions();
+    const optimize = b.standardOptimizeOption(.{});
 
     // this exports both a library and a binary
 
-    const exe = b.addExecutable("zigdig", "src/main.zig");
-    exe.setTarget(target);
-    exe.setBuildMode(mode);
+    const exe = b.addExecutable(.{
+        .name = "zigdig",
+        .root_source_file = .{ .path = "src/main.zig" },
+        .target = target,
+        .optimize = optimize,
+    });
     if (option_libc) exe.linkLibC();
 
-    const exe_host = b.addExecutable("tinyhost", "src/main_tinyhost.zig");
-    exe_host.setTarget(target);
-    exe_host.setBuildMode(mode);
-    if (option_libc) exe_host.linkLibC();
+    const exe_tinyhost = b.addExecutable(.{
+        .name = "zigdig-tiny",
+        .root_source_file = .{ .path = "src/main_tinyhost.zig" },
+        .target = target,
+        .optimize = optimize,
+    });
+    if (option_libc) exe.linkLibC();
 
-    const lib = b.addStaticLibrary("zigdig", "src/lib.zig");
-    lib.setTarget(target);
-    lib.setBuildMode(mode);
-
-    var lib_tests = b.addTest("src/main.zig");
-    lib_tests.setBuildMode(mode);
+    var lib_tests = b.addTest(.{
+        .root_source_file = .{ .path = "src/main.zig" },
+        .optimize = optimize,
+    });
 
     const test_step = b.step("test", "Run library tests");
     test_step.dependOn(&lib_tests.step);
@@ -45,12 +49,11 @@ pub fn build(b: *Builder) void {
     const run_step = b.step("run", "Run example binary");
     run_step.dependOn(&run_cmd.step);
 
-    b.default_step.dependOn(&lib.step);
     b.default_step.dependOn(&exe.step);
-
-    lib.addPackagePath("dns", "src/lib.zig");
-    exe.addPackagePath("dns", "src/lib.zig");
-
-    b.installArtifact(lib);
+    b.default_step.dependOn(&exe_tinyhost.step);
+    b.addModule(.{
+        .name = "dns",
+        .source_file = .{ .path = "src/lib.zig" },
+    });
     b.installArtifact(exe);
 }
