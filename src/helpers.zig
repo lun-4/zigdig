@@ -410,10 +410,8 @@ fn fetchTrustedAddresses(
     const conn = try dns.helpers.connectToSystemResolver();
     defer conn.close();
 
-    logger.info("selected nameserver: {}\n", .{conn.address});
-
+    logger.debug("selected nameserver: {}", .{conn.address});
     try conn.sendPacket(packet);
-
     return try receiveTrustedAddresses(allocator, &conn, .{});
 }
 
@@ -426,7 +424,7 @@ pub fn getAddressList(incoming_name: []const u8, allocator: std.mem.Allocator) !
     const name = try dns.Name.fromString(incoming_name, &name_buffer);
 
     var final_list = std.ArrayList(std.net.Address).init(allocator);
-    errdefer final_list.deinit();
+    defer final_list.deinit();
 
     var addrs_v4 = try fetchTrustedAddresses(allocator, name, .A);
     defer allocator.free(addrs_v4);
@@ -438,6 +436,6 @@ pub fn getAddressList(incoming_name: []const u8, allocator: std.mem.Allocator) !
 
     return AddressList{
         .allocator = allocator,
-        .addrs = final_list.items,
+        .addrs = try final_list.toOwnedSlice(),
     };
 }
