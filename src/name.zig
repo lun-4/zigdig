@@ -266,6 +266,8 @@ pub const FullName = struct {
         var it = std.mem.split(u8, domain, ".");
         var idx: usize = 0;
         while (it.next()) |label| {
+            if (label.len == 0) return error.EmptyLabelInName;
+
             // Is there a better error for this?
             if (idx > (buffer.len - 1)) return error.Underflow; // buffer too small
 
