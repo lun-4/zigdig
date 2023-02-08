@@ -80,7 +80,7 @@ pub const Name = union(enum) {
             } } else .{
                 .full = try FullName.fromAssumedComponents(
                     allocator,
-                    try components.toOwnedSlice(),
+                    components.items,
                     current_byte_index,
                 ),
             };
@@ -213,6 +213,9 @@ pub const FullName = struct {
 
     const Self = @This();
 
+    /// Create a FullName from a []LabelComponent.
+    ///
+    /// Assumes that the slice does not end in a pointer.
     pub fn fromAssumedComponents(
         allocator: std.mem.Allocator,
         components: []LabelComponent,
