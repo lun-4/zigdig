@@ -198,6 +198,22 @@ pub const Name = union(enum) {
     pub fn fromString(domain: []const u8, buffer: [][]const u8) !Self {
         return .{ .full = try FullName.fromString(domain, buffer) };
     }
+
+    pub fn format(
+        self: Self,
+        comptime f: []const u8,
+        options: std.fmt.FormatOptions,
+        writer: anytype,
+    ) !void {
+        return switch (self) {
+            .full => |full| full.format(f, options, writer),
+            .raw => |raw| for (raw.labels) |component| switch (component) {
+                .Pointer => |ptr| try std.fmt.format(writer, "(pointer={d}).", .{ptr}),
+                .Full => |label| try std.fmt.format(writer, "{s}.", .{label}),
+                .Null => break,
+            },
+        };
+    }
 };
 
 /// Represents a single DNS domain-name, which is a slice of strings.
