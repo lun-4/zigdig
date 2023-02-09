@@ -553,30 +553,39 @@ pub const IncomingPacket = struct {
     allocator: std.mem.Allocator,
     packet: *Packet,
 
-    fn freeResource(self: @This(), resource: Resource) void {
-        if (resource.name) |name| name.deinit(self.allocator);
-        if (resource.opaque_rdata) |opaque_rdata| self.allocator.free(opaque_rdata.data);
+    fn freeResource(
+        self: @This(),
+        resource: Resource,
+        options: DeinitOptions,
+    ) void {
+        if (options.names)
+            if (resource.name) |name| name.deinit(self.allocator);
+        if (resource.opaque_rdata) |opaque_rdata|
+            self.allocator.free(opaque_rdata.data);
     }
 
-    fn freeResourceList(self: @This(), resource_list: []Resource) void {
-        for (resource_list) |resource| self.freeResource(resource);
+    fn freeResourceList(
+        self: @This(),
+        resource_list: []Resource,
+        options: DeinitOptions,
+    ) void {
+        for (resource_list) |resource| self.freeResource(resource, options);
         self.allocator.free(resource_list);
     }
 
-    pub fn deinit(self: @This()) void {
-        for (self.packet.questions) |question| {
+    pub const DeinitOptions = struct {
+        names: bool = true,
+    };
+
+    pub fn deinit(self: @This(), options: DeinitOptions) void {
+        if (options.names) for (self.packet.questions) |question| {
             if (question.name) |name| name.deinit(self.allocator);
-        }
+        };
 
         self.allocator.free(self.packet.questions);
-        self.freeResourceList(self.packet.answers);
-        self.freeResourceList(self.packet.nameservers);
-        self.freeResourceList(self.packet.additionals);
-
-        if (self.packet.extra_names) |list| {
-            for (list.items) |name| name.deinit(self.allocator);
-            list.deinit();
-        }
+        self.freeResourceList(self.packet.answers, options);
+        self.freeResourceList(self.packet.nameservers, options);
+        self.freeResourceList(self.packet.additionals, options);
 
         self.allocator.destroy(self.packet);
     }

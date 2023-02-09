@@ -95,6 +95,7 @@ pub const ResourceDataHolder = struct {
 pub const ParserOptions = struct {
     /// Give an allocator if you want names to appear properly.
     allocator: ?std.mem.Allocator = null,
+    name_pool: ?*dns.NamePool = null,
 
     max_label_size: usize = 32,
 };

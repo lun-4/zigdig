@@ -129,23 +129,22 @@ test "deserialization of reply google.com/A" {
     try testing.expectEqual(dns.ResourceClass.IN, answer.class);
     try testing.expectEqual(@as(i32, 300), answer.ttl);
 
-    // TODO standalone rdata parse
+    const resource_data = try dns.ResourceData.fromOpaque(
+        .A,
+        answer.opaque_rdata.?,
+        .{},
+    );
 
-    //const resource_data = try dns.ResourceData.fromOpaque(
-    //    pkt,
-    //    .A,
-    //    answer.opaque_rdata.?,
-    //    std.testing.allocator,
-    //);
-    //defer resource_data.deinit(std.testing.allocator);
+    try testing.expectEqual(
+        dns.ResourceType.A,
+        @as(dns.ResourceType, resource_data),
+    );
 
-    //try testing.expectEqual(dns.ResourceType.A, @as(dns.ResourceType, resource_data));
-
-    //const addr = @ptrCast(*const [4]u8, &resource_data.A.in.sa.addr).*;
-    //try testing.expectEqual(@as(u8, 216), addr[0]);
-    //try testing.expectEqual(@as(u8, 58), addr[1]);
-    //try testing.expectEqual(@as(u8, 202), addr[2]);
-    //try testing.expectEqual(@as(u8, 142), addr[3]);
+    const addr = @ptrCast(*const [4]u8, &resource_data.A.in.sa.addr).*;
+    try testing.expectEqual(@as(u8, 216), addr[0]);
+    try testing.expectEqual(@as(u8, 58), addr[1]);
+    try testing.expectEqual(@as(u8, 202), addr[2]);
+    try testing.expectEqual(@as(u8, 142), addr[3]);
 }
 
 fn encodeBase64(buffer: []u8, source: []const u8) []const u8 {

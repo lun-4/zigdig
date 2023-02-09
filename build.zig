@@ -1,7 +1,7 @@
 const Builder = std.build.Builder;
 const std = @import("std");
 pub fn build(b: *Builder) void {
-    const native_opt = b.option(bool, "native", "if many cpu, turn this on");
+    const native_opt = b.option(bool, "native", "if other people exist, turn this off");
     const option_libc = (b.option(bool, "libc", "build with libc?")) orelse false;
     const is_native = native_opt orelse true;
 

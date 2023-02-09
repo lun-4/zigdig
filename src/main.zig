@@ -60,24 +60,31 @@ pub fn main() !void {
 
     logger.info("selected nameserver: {}\n", .{conn.address});
     const stdout = std.io.getStdOut();
-    try dns.helpers.printAsZoneFile(&packet, allocator, stdout.writer());
+    try dns.helpers.printAsZoneFile(&packet, undefined, stdout.writer());
 
     try conn.sendPacket(packet);
+
+    // as we need Names inside the NamePool to live beyond the
+    // ReplyPacket, we must take ownership of them and deinit ourselves
+    //
+    // This is required to parse names inside printAsZoneFile
+    var name_pool = dns.NamePool.init(allocator);
+    defer name_pool.deinitWithNames();
 
     const reply = try conn.receiveFullPacket(
         allocator,
         4096,
-        .{ .allocator = allocator },
+        .{ .allocator = allocator, .name_pool = &name_pool },
     );
-    defer reply.deinit();
+    defer reply.deinit(.{ .names = false });
 
     const reply_packet = reply.packet;
-    logger.info("reply: {}", .{reply_packet});
+    logger.debug("reply: {}", .{reply_packet});
 
     try std.testing.expectEqual(packet.header.id, reply_packet.header.id);
     try std.testing.expect(reply_packet.header.is_response);
 
-    try dns.helpers.printAsZoneFile(reply_packet, allocator, stdout.writer());
+    try dns.helpers.printAsZoneFile(reply_packet, &name_pool, stdout.writer());
 }
 
 test "awooga" {

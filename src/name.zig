@@ -331,16 +331,23 @@ pub const NamePool = struct {
         self.held_names.deinit();
     }
 
+    pub fn deinitWithNames(self: Self) void {
+        for (self.held_names.items) |name| name.deinit(self.allocator);
+        self.deinit();
+    }
+
     /// Convert dns.RawName or FullName to FullName, applying pointer
     /// resolution, and storing the name for future pointers to be resolved.
-    fn transmuteName(self: *Self, name: dns.Name) !dns.Name {
+    ///
+    /// takes ownership of the given name.
+    pub fn transmuteName(self: *Self, name: dns.Name) !dns.Name {
         return switch (name) {
             .full => blk: {
                 try self.held_names.append(name);
                 break :blk name;
             },
             .raw => |raw| blk: {
-                defer self.allocator.free(name.raw.labels);
+                defer name.deinit(self.allocator);
                 // this ends in a Pointer, create a new FullName
                 var resolved_labels = std.ArrayList([]const u8).init(self.allocator);
                 defer resolved_labels.deinit();

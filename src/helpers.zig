@@ -2,42 +2,59 @@ const std = @import("std");
 const dns = @import("lib.zig");
 
 /// Print a slice of DNSResource to stderr.
-fn printList(packet: *dns.Packet, allocator: std.mem.Allocator, writer: anytype, resource_list: []dns.Resource) !void {
+fn printList(
+    name_pool: *dns.NamePool,
+    writer: anytype,
+    resource_list: []dns.Resource,
+) !void {
     // TODO the formatting here is not good...
     try writer.print(";;name\t\t\trrtype\tclass\tttl\trdata\n", .{});
 
     for (resource_list) |resource| {
-        _ = packet;
-        _ = allocator;
-        // var resource_data = try dns.ResourceData.fromOpaque(
-        //     packet,
-        //     resource.typ,
-        //     resource.opaque_rdata.?,
-        //     allocator,
-        // );
-        // defer resource_data.deinit(allocator);
+        const resource_data = try dns.ResourceData.fromOpaque(
+            resource.typ,
+            resource.opaque_rdata.?,
+            .{
+                .name_provider = .{ .full = name_pool },
+                .allocator = name_pool.allocator,
+            },
+        );
+        defer switch (resource_data) {
+            .TXT => resource_data.deinit(name_pool.allocator),
+            else => {}, // managed a layer above
+        };
 
-        try writer.print("{?}\t\t{s}\t{s}\t{d}\tTODO\n", .{
+        try writer.print("{?}\t\t{s}\t{s}\t{d}\t{any}\n", .{
             resource.name.?,
             @tagName(resource.typ),
             @tagName(resource.class),
             resource.ttl,
-            //resource_data,
+            resource_data,
         });
     }
 
     try writer.print("\n", .{});
 }
 
-/// Print a packet to stderr.
-pub fn printAsZoneFile(packet: *dns.Packet, allocator: std.mem.Allocator, writer: anytype) !void {
-    try writer.print("id: {}, opcode: {}, rcode: {}\n", .{
-        packet.header.id,
+/// Print a packet in the format of a "zone file".
+///
+/// This will deserialize resourcedata in the resource sections, so
+/// a NamePool instance is required.
+///
+/// This helper method will NOT free the memory created by name allocation,
+/// you should do this manually in a defer block calling NamePool.deinitWithNames.
+pub fn printAsZoneFile(
+    packet: *dns.Packet,
+    name_pool: *dns.NamePool,
+    writer: anytype,
+) !void {
+    try writer.print(";; opcode: {}, status: {}, id: {}\n", .{
         packet.header.opcode,
         packet.header.response_code,
+        packet.header.id,
     });
 
-    try writer.print("qd: {}, an: {}, ns: {}, ar: {}\n\n", .{
+    try writer.print(";; QUERY: {}, ANSWER: {}, AUTHORITY: {}, ADDITIONAL: {}\n\n", .{
         packet.header.question_length,
         packet.header.answer_length,
         packet.header.nameserver_length,
@@ -45,7 +62,7 @@ pub fn printAsZoneFile(packet: *dns.Packet, allocator: std.mem.Allocator, writer
     });
 
     if (packet.header.question_length > 0) {
-        try writer.print(";;-- question --\n", .{});
+        try writer.print(";; QUESTION SECTION:\n", .{});
         try writer.print(";;name\ttype\tclass\n", .{});
 
         for (packet.questions) |question| {
@@ -60,22 +77,22 @@ pub fn printAsZoneFile(packet: *dns.Packet, allocator: std.mem.Allocator, writer
     }
 
     if (packet.header.answer_length > 0) {
-        try writer.print(";; -- answer --\n", .{});
-        try printList(packet, allocator, writer, packet.answers);
+        try writer.print(";; ANSWER SECTION:\n", .{});
+        try printList(name_pool, writer, packet.answers);
     } else {
         try writer.print(";; no answer\n", .{});
     }
 
     if (packet.header.nameserver_length > 0) {
-        try writer.print(";; -- authority --\n", .{});
-        try printList(packet, allocator, writer, packet.nameservers);
+        try writer.print(";; AUTHORITY SECTION:\n", .{});
+        try printList(name_pool, writer, packet.nameservers);
     } else {
         try writer.print(";; no authority\n\n", .{});
     }
 
     if (packet.header.additional_length > 0) {
-        try writer.print(";; -- additional --\n", .{});
-        try printList(packet, allocator, writer, packet.additionals);
+        try writer.print(";; ADDITIONAL SECTION:\n", .{});
+        try printList(name_pool, writer, packet.additionals);
     } else {
         try writer.print(";; no additional\n\n", .{});
     }
@@ -167,8 +184,10 @@ pub fn parseFullPacket(
     var ctx = dns.ParserContext{};
     var parser = dns.parser(reader, &ctx, options);
 
-    var name_pool = dns.NamePool.init(allocator);
-    defer name_pool.deinit();
+    var builtin_name_pool = dns.NamePool.init(allocator);
+    defer builtin_name_pool.deinit();
+
+    var name_pool = if (options.name_pool) |name_pool| name_pool else &builtin_name_pool;
 
     var questions = std.ArrayList(dns.Question).init(allocator);
     defer questions.deinit();
