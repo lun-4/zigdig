@@ -64,7 +64,11 @@ pub fn main() !void {
 
     try conn.sendPacket(packet);
 
-    const reply = try conn.receiveFullPacket(allocator, 4096, .{});
+    const reply = try conn.receiveFullPacket(
+        allocator,
+        4096,
+        .{ .allocator = allocator },
+    );
     defer reply.deinit();
 
     const reply_packet = reply.packet;

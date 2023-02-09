@@ -426,6 +426,8 @@ pub const NamePool = struct {
     ///
     /// to be able to do this, ALL questions and resources must be registered
     /// in the NamePool.
+    ///
+    /// this takes ownership of the given resource.
     pub fn transmuteResource(self: *Self, resource: anytype) !@TypeOf(resource) {
         switch (@TypeOf(resource)) {
             dns.Question => {

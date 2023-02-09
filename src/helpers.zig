@@ -7,10 +7,8 @@ fn printList(packet: *dns.Packet, allocator: std.mem.Allocator, writer: anytype,
     try writer.print(";;name\t\t\trrtype\tclass\tttl\trdata\n", .{});
 
     for (resource_list) |resource| {
-        _ = resource;
         _ = packet;
         _ = allocator;
-        unreachable;
         // var resource_data = try dns.ResourceData.fromOpaque(
         //     packet,
         //     resource.typ,
@@ -19,13 +17,13 @@ fn printList(packet: *dns.Packet, allocator: std.mem.Allocator, writer: anytype,
         // );
         // defer resource_data.deinit(allocator);
 
-        // try writer.print("{s}\t\t{s}\t{s}\t{d}\t{any}\n", .{
-        //     resource.name,
-        //     @tagName(resource.typ),
-        //     @tagName(resource.class),
-        //     resource.ttl,
-        //     resource_data,
-        // });
+        try writer.print("{?}\t\t{s}\t{s}\t{d}\tTODO\n", .{
+            resource.name.?,
+            @tagName(resource.typ),
+            @tagName(resource.class),
+            resource.ttl,
+            //resource_data,
+        });
     }
 
     try writer.print("\n", .{});
@@ -136,7 +134,7 @@ pub const DNSConnection = struct {
         packet_allocator: std.mem.Allocator,
         /// Maximum size for the incoming UDP datagram
         comptime max_incoming_message_size: usize,
-        comptime options: dns.ParserOptions,
+        options: dns.ParserOptions,
     ) !dns.IncomingPacket {
         var packet_buffer: [max_incoming_message_size]u8 = undefined;
         const read_bytes = try self.socket.read(&packet_buffer);
@@ -150,9 +148,14 @@ pub const DNSConnection = struct {
 
 pub fn parseFullPacket(
     reader: anytype,
+    // TODO separate allocator and options.allocator
     allocator: std.mem.Allocator,
-    comptime options: dns.ParserOptions,
+    options: dns.ParserOptions,
 ) !dns.IncomingPacket {
+    if (options.allocator == null) {
+        @panic("parseFullPacket requires options.allocator to be set");
+    }
+
     var packet = try allocator.create(dns.Packet);
     packet.extra_names = null;
     errdefer allocator.destroy(packet);
