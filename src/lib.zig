@@ -6,6 +6,7 @@ pub const FullName = names.FullName;
 pub const RawName = names.RawName;
 pub const Name = names.Name;
 pub const LabelComponent = names.LabelComponent;
+pub const NamePool = names.NamePool;
 
 const pkt = @import("packet.zig");
 pub const Packet = pkt.Packet;

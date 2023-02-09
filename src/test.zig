@@ -124,7 +124,7 @@ test "deserialization of reply google.com/A" {
 
     var answer = pkt.answers[0];
 
-    // TODO ptr resolution try expectGoogleLabels(answer.name.?.full.labels);
+    try expectGoogleLabels(answer.name.?.full.labels);
     try testing.expectEqual(dns.ResourceType.A, answer.typ);
     try testing.expectEqual(dns.ResourceClass.IN, answer.class);
     try testing.expectEqual(@as(i32, 300), answer.ttl);

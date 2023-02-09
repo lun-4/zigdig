@@ -312,3 +312,133 @@ pub const FullName = struct {
         }
     }
 };
+
+const NameList = std.ArrayList(dns.Name);
+
+pub const NamePool = struct {
+    allocator: std.mem.Allocator,
+    held_names: NameList,
+
+    const Self = @This();
+    pub fn init(allocator: std.mem.Allocator) Self {
+        return Self{
+            .allocator = allocator,
+            .held_names = NameList.init(allocator),
+        };
+    }
+
+    pub fn deinit(self: Self) void {
+        self.held_names.deinit();
+    }
+
+    /// Convert dns.RawName or FullName to FullName, applying pointer
+    /// resolution, and storing the name for future pointers to be resolved.
+    fn transmuteName(self: *Self, name: dns.Name) !dns.Name {
+        return switch (name) {
+            .full => blk: {
+                try self.held_names.append(name);
+                break :blk name;
+            },
+            .raw => |raw| blk: {
+                // this ends in a Pointer, create a new FullName
+                var resolved_labels = std.ArrayList([]const u8).init(self.allocator);
+                defer resolved_labels.deinit();
+
+                for (raw.labels) |raw_component| switch (raw_component) {
+                    .Full => |text| try resolved_labels.append(try self.allocator.dupe(u8, text)),
+                    .Pointer => |packet_offset| {
+
+                        // step 1: find out the name we already have
+                        // that contains this pointer
+                        var maybe_referenced_name: ?dns.FullName = null;
+                        for (self.held_names.items) |held_name_from_list| {
+                            const held_name = held_name_from_list.full;
+
+                            const packet_index =
+                                if (held_name.packet_index) |idx|
+                                idx
+                            else
+                                continue;
+
+                            // calculate end packet offset using length of the
+                            // full name.
+
+                            const start_index = packet_index;
+                            var name_length: usize = 0;
+                            for (held_name.labels) |label|
+                                name_length += label.len;
+                            const end_index = packet_index + name_length;
+
+                            if (start_index <= packet_offset and packet_offset <= end_index) {
+                                maybe_referenced_name = held_name;
+                            }
+                        }
+
+                        if (maybe_referenced_name) |referenced_name| {
+                            var label_cursor: usize = referenced_name.packet_index.?;
+                            var label_index: ?usize = null;
+
+                            for (referenced_name.labels) |label, idx| {
+                                // if cursor is in offset's range, select that
+                                // label onwards as our new label
+                                const label_start = label_cursor;
+                                if (label_start <= packet_offset) {
+                                    label_index = idx;
+                                }
+                                label_cursor += label.len;
+                            }
+
+                            const referenced_labels = referenced_name.labels[label_index.?..];
+
+                            for (referenced_labels) |referenced_label| {
+                                try resolved_labels.append(try self.allocator.dupe(u8, referenced_label));
+                            }
+                        } else {
+                            logger.warn(
+                                "unknown pointer offset: pointer has offset={d}",
+                                .{packet_offset},
+                            );
+
+                            for (self.held_names.items) |held_name| {
+                                logger.warn(
+                                    "known name: {} at offset {?d}",
+                                    .{ held_name, held_name.full.packet_index },
+                                );
+                            }
+
+                            return error.UnknownPointerOffset;
+                        }
+                    },
+                    .Null => unreachable,
+                };
+
+                const full_name = dns.Name{ .full = dns.FullName{
+                    .labels = try resolved_labels.toOwnedSlice(),
+                } };
+                try self.held_names.append(full_name);
+                break :blk full_name;
+            },
+        };
+    }
+
+    /// given a dns.Question or dns.Resource, resolve pointers and return
+    /// that same Question or Resource with a FullName inside of it.
+    ///
+    /// to be able to do this, ALL questions and resources must be registered
+    /// in the NamePool.
+    pub fn transmuteResource(self: *Self, resource: anytype) !@TypeOf(resource) {
+        switch (@TypeOf(resource)) {
+            dns.Question => {
+                var new_question = resource;
+                new_question.name = try self.transmuteName(resource.name.?);
+                return new_question;
+            },
+            dns.Resource => {
+                var new_resource = resource;
+                new_resource.name = try self.transmuteName(resource.name.?);
+                return new_resource;
+            },
+            else => @compileError("invalid type to resolve in name pool " ++ @typeName(@TypeOf(resource))),
+        }
+    }
+};

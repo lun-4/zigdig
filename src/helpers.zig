@@ -164,8 +164,8 @@ pub fn parseFullPacket(
     var ctx = dns.ParserContext{};
     var parser = dns.parser(reader, &ctx, options);
 
-    //TODO var name_pool = dns.NamePool.init(allocator);
-    //TODO errdefer name_pool.deinit();
+    var name_pool = dns.NamePool.init(allocator);
+    defer name_pool.deinit();
 
     var questions = std.ArrayList(dns.Question).init(allocator);
     defer questions.deinit();
@@ -182,13 +182,16 @@ pub fn parseFullPacket(
     while (try parser.next()) |part| {
         switch (part) {
             .header => |header| packet.header = header,
-            .question => |question| {
+            .question => |question_with_raw_names| {
+                var question = try name_pool.transmuteResource(question_with_raw_names);
                 try questions.append(question);
             },
             .end_question => packet.questions = try questions.toOwnedSlice(),
-            .answer, .nameserver, .additional => |resource| {
+            .answer, .nameserver, .additional => |raw_resource| {
                 // since we give it an allocator, we don't receive rdata
                 // sections
+
+                var resource = try name_pool.transmuteResource(raw_resource);
                 try (switch (part) {
                     .answer => answers,
                     .nameserver => nameservers,
