@@ -14,7 +14,13 @@ pub const LabelComponent = union(enum) {
 };
 
 pub const RawName = struct {
+    // TODO rename this to components
     labels: []LabelComponent,
+
+    /// Represents the index of that name in its packet's body.
+    ///
+    /// **This is an internal field for DNS name pointer resolution.**
+    packet_index: ?usize = null,
 };
 
 const ReadNameOptions = struct {
@@ -77,6 +83,7 @@ pub const Name = union(enum) {
 
             return if (is_raw) .{ .raw = .{
                 .labels = try components.toOwnedSlice(),
+                .packet_index = current_byte_index,
             } } else .{
                 .full = try FullName.fromAssumedComponents(
                     allocator,
@@ -422,6 +429,7 @@ pub const NamePool = struct {
 
                 const full_name = dns.Name{ .full = dns.FullName{
                     .labels = try resolved_labels.toOwnedSlice(),
+                    .packet_index = name.raw.packet_index,
                 } };
                 try self.held_names.append(full_name);
                 break :blk full_name;
