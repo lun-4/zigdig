@@ -340,6 +340,7 @@ pub const NamePool = struct {
                 break :blk name;
             },
             .raw => |raw| blk: {
+                defer self.allocator.free(name.raw.labels);
                 // this ends in a Pointer, create a new FullName
                 var resolved_labels = std.ArrayList([]const u8).init(self.allocator);
                 defer resolved_labels.deinit();
