@@ -292,6 +292,7 @@ const AddressList = struct {
 
 const ReceiveTrustedAddressesOptions = struct {
     max_incoming_message_size: usize = 4096,
+    requested_packet_header: ?dns.Header = null,
     //resource_resolution_options: dns.ResourceResolutionOptions = .{},
 };
 
@@ -331,10 +332,10 @@ pub fn receiveTrustedAddresses(
     while (try parser.next()) |part| {
         switch (part) {
             .header => |header| {
-                //if (options.given_packet) |given_packet| {
-                //    if (given_packet.header.id != header.id)
-                //        return error.InvalidReply;
-                //}
+                if (options.requested_packet_header) |given_header| {
+                    if (given_header.id != header.id)
+                        return error.InvalidReply;
+                }
 
                 if (!header.is_response) return error.InvalidResponse;
 
