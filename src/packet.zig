@@ -148,14 +148,33 @@ pub const Header = packed struct {
 };
 
 pub const Question = struct {
-    name: Name,
+    name: ?dns.Name,
     typ: ResourceType,
     class: ResourceClass,
+
+    const Self = @This();
+
+    pub fn readFrom(reader: anytype, options: dns.ParserOptions) !Self {
+        logger.debug(
+            "reading question at {d} bytes",
+            .{reader.context.ctx.current_byte_count},
+        );
+
+        var name = try Name.readFrom(reader, options);
+        var qtype = try reader.readEnum(ResourceType, .Big);
+        var qclass = try ResourceClass.readFrom(reader);
+
+        return Self{
+            .name = name,
+            .typ = qtype,
+            .class = qclass,
+        };
+    }
 };
 
 /// DNS resource
 pub const Resource = struct {
-    name: Name,
+    name: ?dns.Name,
     typ: ResourceType,
     class: ResourceClass,
 
@@ -163,18 +182,61 @@ pub const Resource = struct {
 
     /// Opaque Resource Data.
     /// Parsing of the data in this is done by a separate package, dns.rdata
-    opaque_rdata: dns.ResourceData.Opaque,
+    opaque_rdata: ?dns.ResourceData.Opaque,
+
+    const Self = @This();
+
+    /// Extract an RDATA. This only spits out a slice of u8.
+    /// Parsing of RDATA sections are in the dns.rdata module.
+    ///
+    /// Caller owns returned memory.
+    fn readResourceDataFrom(
+        reader: anytype,
+        options: dns.ParserOptions,
+    ) !?dns.ResourceData.Opaque {
+        if (options.allocator) |allocator| {
+            const rdata_length = try reader.readIntBig(u16);
+            const rdata_index = reader.context.ctx.current_byte_count;
+
+            var opaque_rdata = try allocator.alloc(u8, rdata_length);
+            const read_bytes = try reader.read(opaque_rdata);
+            std.debug.assert(read_bytes == opaque_rdata.len);
+            return .{
+                .data = opaque_rdata,
+                .current_byte_count = rdata_index,
+            };
+        } else {
+            return null;
+        }
+    }
+
+    pub fn readFrom(reader: anytype, options: dns.ParserOptions) !Self {
+        logger.debug("reading resource at {d} bytes", .{reader.context.ctx.current_byte_count});
+        var name = try Name.readFrom(reader, options);
+        var typ = try ResourceType.readFrom(reader);
+        var class = try ResourceClass.readFrom(reader);
+        var ttl = try reader.readIntBig(i32);
+        var opaque_rdata = try Self.readResourceDataFrom(reader, options);
+
+        return Self{
+            .name = name,
+            .typ = typ,
+            .class = class,
+            .ttl = ttl,
+            .opaque_rdata = opaque_rdata,
+        };
+    }
 
     pub fn writeTo(self: @This(), writer: anytype) !usize {
-        const name_size = try self.name.writeTo(writer);
+        const name_size = try self.name.?.writeTo(writer);
         const typ_size = try self.typ.writeTo(writer);
         const class_size = try self.class.writeTo(writer);
         const ttl_size = 32 / 8;
         try writer.writeIntBig(i32, self.ttl);
 
         const rdata_prefix_size = 16 / 8;
-        try writer.writeIntBig(u16, @intCast(u16, self.opaque_rdata.data.len));
-        const rdata_size = try writer.write(self.opaque_rdata.data);
+        try writer.writeIntBig(u16, @intCast(u16, self.opaque_rdata.?.data.len));
+        const rdata_size = try writer.write(self.opaque_rdata.?.data);
 
         return name_size + typ_size + class_size + ttl_size + rdata_prefix_size + rdata_size;
     }
@@ -184,11 +246,7 @@ const ByteList = std.ArrayList(u8);
 const StringList = std.ArrayList([]u8);
 const ManyStringList = std.ArrayList([][]const u8);
 
-pub const DeserializationContext = struct {
-    current_byte_count: usize = 0,
-};
-
-const LabelComponent = union(enum) {
+pub const LabelComponent = union(enum) {
     Full: []const u8,
     /// Holds the first offset component of that pointer.
     ///
@@ -197,44 +255,6 @@ const LabelComponent = union(enum) {
     Pointer: u8,
     Null: void,
 };
-
-/// Wrap a Reader with a type that contains a DeserializationContext.
-///
-/// Automatically increments the DeserializationContext's current_byte_count
-/// on every read().
-///
-/// Useful to hold deserialization state without having to pass an entire
-/// parameter around on every single helper function.
-pub fn WrapperReader(comptime ReaderType: anytype) type {
-    return struct {
-        underlying_reader: ReaderType,
-        ctx: *DeserializationContext,
-
-        const Self = @This();
-
-        pub fn init(
-            underlying_reader: ReaderType,
-            ctx: *DeserializationContext,
-        ) Self {
-            return .{
-                .underlying_reader = underlying_reader,
-                .ctx = ctx,
-            };
-        }
-
-        pub fn read(self: *Self, buffer: []u8) !usize {
-            const bytes_read = try self.underlying_reader.read(buffer);
-            self.ctx.current_byte_count += bytes_read;
-            return bytes_read;
-        }
-
-        pub const Error = ReaderType.Error || error{OutOfMemory};
-        pub const Reader = std.io.Reader(*Self, Error, read);
-        pub fn reader(self: *Self) Reader {
-            return Reader{ .context = self };
-        }
-    };
-}
 
 const NameList = std.ArrayList(Name);
 
@@ -246,6 +266,9 @@ pub const Packet = struct {
     nameservers: []Resource,
     additionals: []Resource,
 
+    /// Names that are held in RDATA sections are added here.
+    ///
+    /// This is an internal field that shouldn't be used by API consumers.
     extra_names: ?NameList = null,
 
     const Self = @This();
@@ -270,7 +293,7 @@ pub const Packet = struct {
         var question_size: usize = 0;
 
         for (self.questions) |question| {
-            const question_name_size = try question.name.writeTo(writer);
+            const question_name_size = try question.name.?.writeTo(writer);
             const question_typ_size = try question.typ.writeTo(writer);
             const question_class_size = try question.class.writeTo(writer);
 
@@ -447,55 +470,6 @@ pub const Packet = struct {
             return error.UnknownPointerOffset;
         }
     }
-
-    /// Deserialize a LabelComponent, which can be:
-    ///  - a pointer
-    ///  - a full label ([]const u8)
-    ///  - a null octet
-    fn readLabelComponent(
-        reader: anytype,
-        allocator: std.mem.Allocator,
-    ) !LabelComponent {
-        // pointers, in the binary representation of a byte, are as follows
-        //  1 1 B B B B B B | B B B B B B B B
-        // they are two bytes length, but to identify one, you check if the
-        // first two bits are 1 and 1 respectively.
-        //
-        // then you read the rest, and turn it into an offset (without the
-        // starting bits!!!)
-        //
-        // to prevent inefficiencies, we just read a single byte, see if it
-        // has the starting bits, and then we chop it off, merging with the
-        // next byte. pointer offsets are 14 bits long
-        //
-        // when it isn't a pointer, its a length for a given label, and that
-        // length can only be a single byte.
-        //
-        // if the length is 0, its a null octet
-        var possible_length = try reader.readIntBig(u8);
-        if (possible_length == 0) return LabelComponent{ .Null = {} };
-
-        // RFC1035:
-        // since the label must begin with two zero bits because
-        // labels are restricted to 63 octets or less.
-
-        var bit1 = (possible_length & (1 << 7)) != 0;
-        var bit2 = (possible_length & (1 << 6)) != 0;
-
-        if (bit1 and bit2) {
-            return LabelComponent{ .Pointer = possible_length };
-        } else {
-            // those must be 0 for a correct label length to be made
-            std.debug.assert((!bit1) and (!bit2));
-
-            // the next <possible_length> bytes contain a full label.
-            var label = try allocator.alloc(u8, possible_length);
-            const read_bytes = try reader.read(label);
-            std.debug.assert(read_bytes == label.len);
-            return LabelComponent{ .Full = label };
-        }
-    }
-
     const ReadNameOptions = struct {
         max_label_count: usize = 128,
         is_rdata: bool = false,
@@ -572,111 +546,6 @@ pub const Packet = struct {
 
         return name;
     }
-
-    /// Extract an RDATA. This only spits out a slice of u8.
-    /// Parsing of RDATA sections are in the dns.rdata module.
-    ///
-    /// Caller owns returned memory.
-    fn readResourceDataFrom(
-        reader: anytype,
-        allocator: std.mem.Allocator,
-    ) !dns.ResourceData.Opaque {
-        const rdata_length = try reader.readIntBig(u16);
-        var opaque_rdata = try allocator.alloc(u8, rdata_length);
-        const rdata_index = reader.context.ctx.current_byte_count;
-        const read_bytes = try reader.read(opaque_rdata);
-        std.debug.assert(read_bytes == opaque_rdata.len);
-        return .{
-            .data = opaque_rdata,
-            .current_byte_count = rdata_index,
-        };
-    }
-
-    fn readResourceListFrom(
-        self: *Self,
-        reader: anytype,
-        allocator: std.mem.Allocator,
-        resource_count: usize,
-    ) ![]Resource {
-        var list = std.ArrayList(Resource).init(allocator);
-        defer list.deinit();
-
-        var i: usize = 0;
-        while (i < resource_count) : (i += 1) {
-            var name = try self.readName(reader, allocator, .{});
-
-            var typ = try ResourceType.readFrom(reader);
-            var class = try reader.readEnum(ResourceClass, .Big);
-            var ttl = try reader.readIntBig(i32);
-            var opaque_rdata = try Self.readResourceDataFrom(reader, allocator);
-
-            var resource = Resource{
-                .name = name,
-                .typ = typ,
-                .class = class,
-                .ttl = ttl,
-                .opaque_rdata = opaque_rdata,
-            };
-
-            try list.append(resource);
-        }
-
-        return try list.toOwnedSlice();
-    }
-
-    pub fn readFrom(
-        incoming_reader: anytype,
-        allocator: std.mem.Allocator,
-    ) !IncomingPacket {
-        var packet = try allocator.create(Self);
-        errdefer allocator.destroy(packet);
-        packet.extra_names = NameList.init(allocator);
-
-        var ctx = DeserializationContext{};
-        const WrapperR = WrapperReader(@TypeOf(incoming_reader));
-        var wrapper_reader = WrapperR.init(incoming_reader, &ctx);
-        var reader = wrapper_reader.reader();
-
-        packet.header = try Header.readFrom(reader);
-
-        var questions = std.ArrayList(Question).init(allocator);
-        defer questions.deinit();
-
-        var i: usize = 0;
-        while (i < packet.header.question_length) {
-            var name = try packet.readName(reader, allocator, .{});
-            var qtype = try reader.readEnum(ResourceType, .Big);
-            var qclass = try reader.readEnum(ResourceClass, .Big);
-
-            var question = Question{
-                .name = name,
-                .typ = qtype,
-                .class = qclass,
-            };
-
-            try questions.append(question);
-            i += 1;
-        }
-
-        packet.questions = try questions.toOwnedSlice();
-        packet.answers = try packet.readResourceListFrom(
-            reader,
-            allocator,
-            packet.header.answer_length,
-        );
-        packet.nameservers = try packet.readResourceListFrom(
-            reader,
-            allocator,
-            packet.header.nameserver_length,
-        );
-        packet.additionals = try packet.readResourceListFrom(
-            reader,
-            allocator,
-            packet.header.additional_length,
-        );
-
-        return IncomingPacket{ .packet = packet, .allocator = allocator };
-    }
 };
 
 /// Represents a Packet where all of its data was allocated dynamically
@@ -684,32 +553,39 @@ pub const IncomingPacket = struct {
     allocator: std.mem.Allocator,
     packet: *Packet,
 
-    fn freeResource(self: @This(), resource: Resource) void {
-        for (resource.name.labels) |label| self.allocator.free(label);
-        self.allocator.free(resource.name.labels);
-        self.allocator.free(resource.opaque_rdata.data);
+    fn freeResource(
+        self: @This(),
+        resource: Resource,
+        options: DeinitOptions,
+    ) void {
+        if (options.names)
+            if (resource.name) |name| name.deinit(self.allocator);
+        if (resource.opaque_rdata) |opaque_rdata|
+            self.allocator.free(opaque_rdata.data);
     }
 
-    fn freeResourceList(self: @This(), resource_list: []Resource) void {
-        for (resource_list) |resource| self.freeResource(resource);
+    fn freeResourceList(
+        self: @This(),
+        resource_list: []Resource,
+        options: DeinitOptions,
+    ) void {
+        for (resource_list) |resource| self.freeResource(resource, options);
         self.allocator.free(resource_list);
     }
 
-    pub fn deinit(self: @This()) void {
-        for (self.packet.questions) |question| {
-            for (question.name.labels) |label| self.allocator.free(label);
-            self.allocator.free(question.name.labels);
-        }
+    pub const DeinitOptions = struct {
+        names: bool = true,
+    };
+
+    pub fn deinit(self: @This(), options: DeinitOptions) void {
+        if (options.names) for (self.packet.questions) |question| {
+            if (question.name) |name| name.deinit(self.allocator);
+        };
 
         self.allocator.free(self.packet.questions);
-        self.freeResourceList(self.packet.answers);
-        self.freeResourceList(self.packet.nameservers);
-        self.freeResourceList(self.packet.additionals);
-
-        if (self.packet.extra_names) |list| {
-            for (list.items) |name| name.deinit(self.allocator);
-            list.deinit();
-        }
+        self.freeResourceList(self.packet.answers, options);
+        self.freeResourceList(self.packet.nameservers, options);
+        self.freeResourceList(self.packet.additionals, options);
 
         self.allocator.destroy(self.packet);
     }

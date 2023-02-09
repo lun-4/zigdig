@@ -8,8 +8,8 @@ const Type = dns.ResourceType;
 const logger = std.log.scoped(.dns_rdata);
 
 pub const SOAData = struct {
-    mname: dns.Name,
-    rname: dns.Name,
+    mname: ?dns.Name,
+    rname: ?dns.Name,
     serial: u32,
     refresh: u32,
     retry: u32,
@@ -19,30 +19,47 @@ pub const SOAData = struct {
 
 pub const MXData = struct {
     preference: u16,
-    exchange: dns.Name,
+    exchange: ?dns.Name,
 };
 
 pub const SRVData = struct {
     priority: u16,
     weight: u16,
     port: u16,
-    target: dns.Name,
+    target: ?dns.Name,
 };
+
+fn maybeReadResourceName(
+    reader: anytype,
+    options: ResourceData.ParseOptions,
+) !?dns.Name {
+    return switch (options.name_provider) {
+        .none => null,
+        .raw => |allocator| try dns.Name.readFrom(reader, .{ .allocator = allocator }),
+        .full => |name_pool| blk: {
+            var name = try dns.Name.readFrom(
+                reader,
+                .{ .allocator = name_pool.allocator },
+            );
+            break :blk try name_pool.transmuteName(name.?);
+        },
+    };
+}
 
 /// Common representations of DNS' Resource Data.
 pub const ResourceData = union(Type) {
     A: std.net.Address,
     AAAA: std.net.Address,
 
-    NS: dns.Name,
-    MD: dns.Name,
-    MF: dns.Name,
-    CNAME: dns.Name,
+    NS: ?dns.Name,
+    MD: ?dns.Name,
+    MF: ?dns.Name,
+    CNAME: ?dns.Name,
     SOA: SOAData,
 
-    MB: dns.Name,
-    MG: dns.Name,
-    MR: dns.Name,
+    MB: ?dns.Name,
+    MG: ?dns.Name,
+    MR: ?dns.Name,
 
     // ????
     NULL: void,
@@ -53,19 +70,19 @@ pub const ResourceData = union(Type) {
         proto: u8,
         // how to define bit map? align(8)?
     },
-    PTR: dns.Name,
+    PTR: ?dns.Name,
 
-    // TODO replace by Name?
+    // TODO replace []const u8 by Name?
     HINFO: struct {
         cpu: []const u8,
         os: []const u8,
     },
     MINFO: struct {
-        rmailbx: dns.Name,
-        emailbx: dns.Name,
+        rmailbx: ?dns.Name,
+        emailbx: ?dns.Name,
     },
     MX: MXData,
-    TXT: []const u8,
+    TXT: ?[]const u8,
 
     SRV: SRVData,
     OPT: void, // EDNS0 is not implemented
@@ -106,9 +123,9 @@ pub const ResourceData = union(Type) {
         switch (self) {
             .A, .AAAA => |addr| return fmt.format(writer, "{}", .{addr}),
 
-            .NS, .MD, .MF, .MB, .MG, .MR, .CNAME, .PTR => |name| return fmt.format(writer, "{}", .{name}),
+            .NS, .MD, .MF, .MB, .MG, .MR, .CNAME, .PTR => |name| return fmt.format(writer, "{?}", .{name}),
 
-            .SOA => |soa| return fmt.format(writer, "{} {} {} {} {} {} {}", .{
+            .SOA => |soa| return fmt.format(writer, "{?} {?} {} {} {} {} {}", .{
                 soa.mname,
                 soa.rname,
                 soa.serial,
@@ -118,15 +135,15 @@ pub const ResourceData = union(Type) {
                 soa.minimum,
             }),
 
-            .MX => |mx| return fmt.format(writer, "{} {}", .{ mx.preference, mx.exchange }),
-            .SRV => |srv| return fmt.format(writer, "{} {} {} {}", .{
+            .MX => |mx| return fmt.format(writer, "{} {?}", .{ mx.preference, mx.exchange }),
+            .SRV => |srv| return fmt.format(writer, "{} {} {} {?}", .{
                 srv.priority,
                 srv.weight,
                 srv.port,
                 srv.target,
             }),
 
-            .TXT => |text| return fmt.format(writer, "{s}", .{text}),
+            .TXT => |text| return fmt.format(writer, "{?s}", .{text}),
             else => return fmt.format(writer, "TODO support {s}", .{@tagName(self)}),
         }
     }
@@ -139,11 +156,11 @@ pub const ResourceData = union(Type) {
             },
             .AAAA => |addr| try writer.write(&addr.in6.sa.addr),
 
-            .NS, .MD, .MF, .MB, .MG, .MR, .CNAME, .PTR => |name| try name.writeTo(writer),
+            .NS, .MD, .MF, .MB, .MG, .MR, .CNAME, .PTR => |name| try name.?.writeTo(writer),
 
             .SOA => |soa_data| blk: {
-                const mname_size = try soa_data.mname.writeTo(writer);
-                const rname_size = try soa_data.rname.writeTo(writer);
+                const mname_size = try soa_data.mname.?.writeTo(writer);
+                const rname_size = try soa_data.rname.?.writeTo(writer);
 
                 try writer.writeIntBig(u32, soa_data.serial);
                 try writer.writeIntBig(u32, soa_data.refresh);
@@ -156,7 +173,7 @@ pub const ResourceData = union(Type) {
 
             .MX => |mxdata| blk: {
                 try writer.writeIntBig(u16, mxdata.preference);
-                const exchange_size = try mxdata.exchange.writeTo(writer);
+                const exchange_size = try mxdata.exchange.?.writeTo(writer);
                 break :blk @sizeOf(@TypeOf(mxdata.preference)) + exchange_size;
             },
 
@@ -165,26 +182,26 @@ pub const ResourceData = union(Type) {
                 try writer.writeIntBig(u16, srv.weight);
                 try writer.writeIntBig(u16, srv.port);
 
-                const target_size = try srv.target.writeTo(writer);
+                const target_size = try srv.target.?.writeTo(writer);
                 return target_size + (3 * @sizeOf(u16));
             },
+
+            // TODO TXT
 
             else => @panic("not implemented"),
         };
     }
 
-    /// Only call this if you dynamically created a ResourceData
-    /// through the fromOpaque() method.
     pub fn deinit(self: Self, allocator: std.mem.Allocator) void {
         switch (self) {
-            // .NS, .MD, .MF, .MB, .MG, .MR, .CNAME, .PTR => |name| name.deinit(allocator),
-            // .SOA => |soa_data| {
-            //     soa_data.mname.deinit(allocator);
-            //     soa_data.rname.deinit(allocator);
-            // },
-            // .MX => |mxdata| mxdata.exchange.deinit(allocator),
-            // .SRV => |srv| srv.target.deinit(allocator),
-            .TXT => |data| allocator.free(data),
+            .NS, .MD, .MF, .MB, .MG, .MR, .CNAME, .PTR => |maybe_name| if (maybe_name) |name| name.deinit(allocator),
+            .SOA => |soa_data| {
+                if (soa_data.mname) |name| name.deinit(allocator);
+                if (soa_data.rname) |name| name.deinit(allocator);
+            },
+            .MX => |mxdata| if (mxdata.exchange) |name| name.deinit(allocator),
+            .SRV => |srv| if (srv.target) |name| name.deinit(allocator),
+            .TXT => |maybe_data| if (maybe_data) |data| allocator.free(data),
             else => {},
         }
     }
@@ -194,18 +211,24 @@ pub const ResourceData = union(Type) {
         current_byte_count: usize,
     };
 
+    pub const NameProvider = union(enum) {
+        none: void,
+        raw: std.mem.Allocator,
+        full: *dns.NamePool,
+    };
+
+    pub const ParseOptions = struct {
+        name_provider: NameProvider = NameProvider.none,
+        allocator: ?std.mem.Allocator = null,
+    };
+
     /// Deserialize a given opaque resource data.
     ///
     /// Call deinit() with the same allocator.
     pub fn fromOpaque(
-        /// Packet the resource data comes from.
-        ///
-        /// This is required as resource data may have name pointers
-        /// that refer to the packet index.
-        packet: *dns.Packet,
-        typ: dns.ResourceType,
+        resource_type: dns.ResourceType,
         opaque_resource_data: Opaque,
-        allocator: std.mem.Allocator,
+        options: ParseOptions,
     ) !ResourceData {
         const BufferT = std.io.FixedBufferStream([]const u8);
         var stream = BufferT{ .buffer = opaque_resource_data.data, .pos = 0 };
@@ -213,17 +236,18 @@ pub const ResourceData = union(Type) {
 
         // important to keep track of that rdata's position in the packet
         // as rdata could point to other rdata.
-
-        var ctx = pkt.DeserializationContext{
+        var parser_ctx = dns.ParserContext{
             .current_byte_count = opaque_resource_data.current_byte_count,
         };
-        const WrapperR = pkt.WrapperReader(BufferT.Reader);
-        var wrapper_reader = WrapperR.init(underlying_reader, &ctx);
+
+        const WrapperR = dns.parserlib.WrapperReader(BufferT.Reader);
+        var wrapper_reader = WrapperR{
+            .underlying_reader = underlying_reader,
+            .ctx = &parser_ctx,
+        };
         var reader = wrapper_reader.reader();
 
-        const options = .{ .is_rdata = true };
-
-        var rdata = switch (typ) {
+        return switch (resource_type) {
             .A => blk: {
                 var ip4addr: [4]u8 = undefined;
                 _ = try reader.read(&ip4addr);
@@ -239,24 +263,24 @@ pub const ResourceData = union(Type) {
                 };
             },
 
-            .NS => ResourceData{ .NS = try packet.readName(reader, allocator, options) },
-            .CNAME => ResourceData{ .CNAME = try packet.readName(reader, allocator, options) },
-            .PTR => ResourceData{ .PTR = try packet.readName(reader, allocator, options) },
-            .MD => ResourceData{ .MD = try packet.readName(reader, allocator, options) },
-            .MF => ResourceData{ .MF = try packet.readName(reader, allocator, options) },
+            .NS => ResourceData{ .NS = try maybeReadResourceName(reader, options) },
+            .CNAME => ResourceData{ .CNAME = try maybeReadResourceName(reader, options) },
+            .PTR => ResourceData{ .PTR = try maybeReadResourceName(reader, options) },
+            .MD => ResourceData{ .MD = try maybeReadResourceName(reader, options) },
+            .MF => ResourceData{ .MF = try maybeReadResourceName(reader, options) },
 
             .MX => blk: {
                 break :blk ResourceData{
                     .MX = MXData{
                         .preference = try reader.readIntBig(u16),
-                        .exchange = try packet.readName(reader, allocator, options),
+                        .exchange = try maybeReadResourceName(reader, options),
                     },
                 };
             },
 
             .SOA => blk: {
-                var mname = try packet.readName(reader, allocator, options);
-                var rname = try packet.readName(reader, allocator, options);
+                var mname = try maybeReadResourceName(reader, options);
+                var rname = try maybeReadResourceName(reader, options);
                 var serial = try reader.readIntBig(u32);
                 var refresh = try reader.readIntBig(u32);
                 var retry = try reader.readIntBig(u32);
@@ -279,7 +303,7 @@ pub const ResourceData = union(Type) {
                 const priority = try reader.readIntBig(u16);
                 const weight = try reader.readIntBig(u16);
                 const port = try reader.readIntBig(u16);
-                const target = try packet.readName(reader, allocator, options);
+                const target = try maybeReadResourceName(reader, options);
                 break :blk ResourceData{
                     .SRV = .{
                         .priority = priority,
@@ -293,18 +317,21 @@ pub const ResourceData = union(Type) {
                 const length = try reader.readIntBig(u8);
                 if (length > 256) return error.Overflow;
 
-                var text = try allocator.alloc(u8, length);
-                _ = try reader.read(text);
+                if (options.allocator) |allocator| {
+                    var text = try allocator.alloc(u8, length);
+                    _ = try reader.read(text);
 
-                break :blk ResourceData{ .TXT = text };
+                    break :blk ResourceData{ .TXT = text };
+                } else {
+                    try reader.skipBytes(length, .{});
+                    break :blk ResourceData{ .TXT = null };
+                }
             },
 
             else => {
-                logger.warn("unexpected rdata: {}\n", .{typ});
-                return error.InvalidRData;
+                logger.warn("unexpected rdata: {}\n", .{resource_type});
+                return error.UnknownResourceType;
             },
         };
-
-        return rdata;
     }
 };

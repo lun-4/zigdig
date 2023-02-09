@@ -2,16 +2,30 @@ const std = @import("std");
 const dns = @import("lib.zig");
 
 /// Print a slice of DNSResource to stderr.
-fn printList(packet: *dns.Packet, allocator: std.mem.Allocator, writer: anytype, resource_list: []dns.Resource) !void {
+fn printList(
+    name_pool: *dns.NamePool,
+    writer: anytype,
+    resource_list: []dns.Resource,
+) !void {
     // TODO the formatting here is not good...
     try writer.print(";;name\t\t\trrtype\tclass\tttl\trdata\n", .{});
 
     for (resource_list) |resource| {
-        var resource_data = try dns.ResourceData.fromOpaque(packet, resource.typ, resource.opaque_rdata, allocator);
-        defer resource_data.deinit(allocator);
+        const resource_data = try dns.ResourceData.fromOpaque(
+            resource.typ,
+            resource.opaque_rdata.?,
+            .{
+                .name_provider = .{ .full = name_pool },
+                .allocator = name_pool.allocator,
+            },
+        );
+        defer switch (resource_data) {
+            .TXT => resource_data.deinit(name_pool.allocator),
+            else => {}, // managed a layer above
+        };
 
-        try writer.print("{s}\t\t{s}\t{s}\t{d}\t{any}\n", .{
-            resource.name,
+        try writer.print("{?}\t\t{s}\t{s}\t{d}\t{any}\n", .{
+            resource.name.?,
             @tagName(resource.typ),
             @tagName(resource.class),
             resource.ttl,
@@ -22,15 +36,25 @@ fn printList(packet: *dns.Packet, allocator: std.mem.Allocator, writer: anytype,
     try writer.print("\n", .{});
 }
 
-/// Print a packet to stderr.
-pub fn printAsZoneFile(packet: *dns.Packet, allocator: std.mem.Allocator, writer: anytype) !void {
-    try writer.print("id: {}, opcode: {}, rcode: {}\n", .{
-        packet.header.id,
+/// Print a packet in the format of a "zone file".
+///
+/// This will deserialize resourcedata in the resource sections, so
+/// a NamePool instance is required.
+///
+/// This helper method will NOT free the memory created by name allocation,
+/// you should do this manually in a defer block calling NamePool.deinitWithNames.
+pub fn printAsZoneFile(
+    packet: *dns.Packet,
+    name_pool: *dns.NamePool,
+    writer: anytype,
+) !void {
+    try writer.print(";; opcode: {}, status: {}, id: {}\n", .{
         packet.header.opcode,
         packet.header.response_code,
+        packet.header.id,
     });
 
-    try writer.print("qd: {}, an: {}, ns: {}, ar: {}\n\n", .{
+    try writer.print(";; QUERY: {}, ANSWER: {}, AUTHORITY: {}, ADDITIONAL: {}\n\n", .{
         packet.header.question_length,
         packet.header.answer_length,
         packet.header.nameserver_length,
@@ -38,11 +62,11 @@ pub fn printAsZoneFile(packet: *dns.Packet, allocator: std.mem.Allocator, writer
     });
 
     if (packet.header.question_length > 0) {
-        try writer.print(";;-- question --\n", .{});
+        try writer.print(";; QUESTION SECTION:\n", .{});
         try writer.print(";;name\ttype\tclass\n", .{});
 
         for (packet.questions) |question| {
-            try writer.print(";{s}\t{s}\t{s}\n", .{
+            try writer.print(";{?}\t{s}\t{s}\n", .{
                 question.name,
                 @tagName(question.typ),
                 @tagName(question.class),
@@ -53,22 +77,22 @@ pub fn printAsZoneFile(packet: *dns.Packet, allocator: std.mem.Allocator, writer
     }
 
     if (packet.header.answer_length > 0) {
-        try writer.print(";; -- answer --\n", .{});
-        try printList(packet, allocator, writer, packet.answers);
+        try writer.print(";; ANSWER SECTION:\n", .{});
+        try printList(name_pool, writer, packet.answers);
     } else {
         try writer.print(";; no answer\n", .{});
     }
 
     if (packet.header.nameserver_length > 0) {
-        try writer.print(";; -- authority --\n", .{});
-        try printList(packet, allocator, writer, packet.nameservers);
+        try writer.print(";; AUTHORITY SECTION:\n", .{});
+        try printList(name_pool, writer, packet.nameservers);
     } else {
         try writer.print(";; no authority\n\n", .{});
     }
 
     if (packet.header.additional_length > 0) {
-        try writer.print(";; -- additional --\n", .{});
-        try printList(packet, allocator, writer, packet.additionals);
+        try writer.print(";; ADDITIONAL SECTION:\n", .{});
+        try printList(name_pool, writer, packet.additionals);
     } else {
         try writer.print(";; no additional\n\n", .{});
     }
@@ -116,10 +140,18 @@ pub const DNSConnection = struct {
         );
     }
 
-    pub fn receivePacket(
+    /// Deserializes and allocates an *entire* DNS packet.
+    ///
+    /// This function is not encouraged if you only wish to get A/AAAA
+    /// records for a domain name through the system DNS resolver, as this
+    /// allocates all the data of the packet. Use `receiveTrustedAddresses`
+    /// for such.
+    pub fn receiveFullPacket(
         self: Self,
         packet_allocator: std.mem.Allocator,
+        /// Maximum size for the incoming UDP datagram
         comptime max_incoming_message_size: usize,
+        options: dns.ParserOptions,
     ) !dns.IncomingPacket {
         var packet_buffer: [max_incoming_message_size]u8 = undefined;
         const read_bytes = try self.socket.read(&packet_buffer);
@@ -127,9 +159,77 @@ pub const DNSConnection = struct {
         logger.debug("read {d} bytes", .{read_bytes});
 
         var stream = std.io.FixedBufferStream([]const u8){ .buffer = packet_bytes, .pos = 0 };
-        return try dns.Packet.readFrom(stream.reader(), packet_allocator);
+        return parseFullPacket(stream.reader(), packet_allocator, options);
     }
 };
+
+pub fn parseFullPacket(
+    reader: anytype,
+    // TODO separate allocator and options.allocator
+    allocator: std.mem.Allocator,
+    options: dns.ParserOptions,
+) !dns.IncomingPacket {
+    if (options.allocator == null) {
+        @panic("parseFullPacket requires options.allocator to be set");
+    }
+
+    var packet = try allocator.create(dns.Packet);
+    packet.extra_names = null;
+    errdefer allocator.destroy(packet);
+    var incoming_packet = dns.IncomingPacket{
+        .allocator = allocator,
+        .packet = packet,
+    };
+
+    var ctx = dns.ParserContext{};
+    var parser = dns.parser(reader, &ctx, options);
+
+    var builtin_name_pool = dns.NamePool.init(allocator);
+    defer builtin_name_pool.deinit();
+
+    var name_pool = if (options.name_pool) |name_pool| name_pool else &builtin_name_pool;
+
+    var questions = std.ArrayList(dns.Question).init(allocator);
+    defer questions.deinit();
+
+    var answers = std.ArrayList(dns.Resource).init(allocator);
+    defer answers.deinit();
+
+    var nameservers = std.ArrayList(dns.Resource).init(allocator);
+    defer nameservers.deinit();
+
+    var additionals = std.ArrayList(dns.Resource).init(allocator);
+    defer additionals.deinit();
+
+    while (try parser.next()) |part| {
+        switch (part) {
+            .header => |header| packet.header = header,
+            .question => |question_with_raw_names| {
+                var question = try name_pool.transmuteResource(question_with_raw_names);
+                try questions.append(question);
+            },
+            .end_question => packet.questions = try questions.toOwnedSlice(),
+            .answer, .nameserver, .additional => |raw_resource| {
+                // since we give it an allocator, we don't receive rdata
+                // sections
+
+                var resource = try name_pool.transmuteResource(raw_resource);
+                try (switch (part) {
+                    .answer => answers,
+                    .nameserver => nameservers,
+                    .additional => additionals,
+                    else => unreachable,
+                }).append(resource);
+            },
+            .end_answer => packet.answers = try answers.toOwnedSlice(),
+            .end_nameserver => packet.nameservers = try nameservers.toOwnedSlice(),
+            .end_additional => packet.additionals = try additionals.toOwnedSlice(),
+            .answer_rdata, .nameserver_rdata, .additional_rdata => unreachable,
+        }
+    }
+
+    return incoming_packet;
+}
 
 const logger = std.log.scoped(.dns_helpers);
 
@@ -215,14 +315,103 @@ const AddressList = struct {
     }
 };
 
-/// A very simple getAddressList that sets up the DNS connection and extracts
-/// the A records.
-///
-/// This function does not implement the "happy eyeballs" algorithm.
-pub fn getAddressList(incoming_name: []const u8, allocator: std.mem.Allocator) !AddressList {
-    var name_buffer: [128][]const u8 = undefined;
-    const name = try dns.Name.fromString(incoming_name, &name_buffer);
+const ReceiveTrustedAddressesOptions = struct {
+    max_incoming_message_size: usize = 4096,
+    requested_packet_header: ?dns.Header = null,
+    //resource_resolution_options: dns.ResourceResolutionOptions = .{},
+};
 
+/// This is an optimized deserializer that is only interested in A and AAAA
+/// answers, returning a list of std.net.Address.
+///
+/// This function trusts the DNS connection to be returning answers related
+/// to the given domain sent through DNSConnection.sendPacket.
+///
+/// This, however, does not allocate the packet. It is very memory efficient
+/// in that regard.
+pub fn receiveTrustedAddresses(
+    allocator: std.mem.Allocator,
+    connection: *const DNSConnection,
+    /// Options to receive message and deserialize it
+    comptime options: ReceiveTrustedAddressesOptions,
+) ![]std.net.Address {
+    var packet_buffer: [options.max_incoming_message_size]u8 = undefined;
+    const read_bytes = try connection.socket.read(&packet_buffer);
+    const packet_bytes = packet_buffer[0..read_bytes];
+    logger.debug("read {d} bytes", .{read_bytes});
+
+    var stream = std.io.FixedBufferStream([]const u8){
+        .buffer = packet_bytes,
+        .pos = 0,
+    };
+
+    var ctx = dns.ParserContext{};
+
+    var parser = dns.parser(stream.reader(), &ctx, .{});
+
+    var addrs = std.ArrayList(std.net.Address).init(allocator);
+    errdefer addrs.deinit();
+
+    var current_resource: ?dns.Resource = null;
+
+    while (try parser.next()) |part| {
+        switch (part) {
+            .header => |header| {
+                if (options.requested_packet_header) |given_header| {
+                    if (given_header.id != header.id)
+                        return error.InvalidReply;
+                }
+
+                if (!header.is_response) return error.InvalidResponse;
+
+                switch (header.response_code) {
+                    .NoError => {},
+                    .FormatError => return error.ServerFormatError, // bug in implementation caught by server?
+                    .ServerFailure => return error.ServerFailure,
+                    .NameError => return error.ServerNameError,
+                    .NotImplemented => return error.ServerNotImplemented,
+                    .Refused => return error.ServerRefused,
+                }
+            },
+            .answer => |raw_resource| {
+                current_resource = raw_resource;
+            },
+
+            .answer_rdata => |rdata| {
+                // TODO parser.reader()
+                var reader = parser.wrapper_reader.reader();
+                defer current_resource = null;
+                var maybe_addr = switch (current_resource.?.typ) {
+                    .A => blk: {
+                        var ip4addr: [4]u8 = undefined;
+                        _ = try reader.read(&ip4addr);
+                        break :blk std.net.Address.initIp4(ip4addr, 0);
+                    },
+                    .AAAA => blk: {
+                        var ip6_addr: [16]u8 = undefined;
+                        _ = try reader.read(&ip6_addr);
+                        break :blk std.net.Address.initIp6(ip6_addr, 0, 0, 0);
+                    },
+                    else => blk: {
+                        try reader.skipBytes(rdata.size, .{});
+                        break :blk null;
+                    },
+                };
+
+                if (maybe_addr) |addr| try addrs.append(addr);
+            },
+            else => {},
+        }
+    }
+
+    return try addrs.toOwnedSlice();
+}
+
+fn fetchTrustedAddresses(
+    allocator: std.mem.Allocator,
+    name: dns.Name,
+    qtype: dns.ResourceType,
+) ![]std.net.Address {
     var packet = dns.Packet{
         .header = .{
             .id = dns.helpers.randomHeaderId(),
@@ -230,10 +419,12 @@ pub fn getAddressList(incoming_name: []const u8, allocator: std.mem.Allocator) !
             .wanted_recursion = true,
             .question_length = 1,
         },
+
+        // TODO test if we can put more than one question and itll reply with all
         .questions = &[_]dns.Question{
             .{
                 .name = name,
-                .typ = .A,
+                .typ = qtype,
                 .class = .IN,
             },
         },
@@ -245,44 +436,32 @@ pub fn getAddressList(incoming_name: []const u8, allocator: std.mem.Allocator) !
     const conn = try dns.helpers.connectToSystemResolver();
     defer conn.close();
 
-    logger.info("selected nameserver: {}\n", .{conn.address});
-
+    logger.debug("selected nameserver: {}", .{conn.address});
     try conn.sendPacket(packet);
+    return try receiveTrustedAddresses(allocator, &conn, .{});
+}
 
-    const reply = try conn.receivePacket(allocator, 4096);
-    defer reply.deinit();
+/// A very simple getAddressList that sets up the DNS connection and extracts
+/// the A records.
+///
+/// This function does not implement the "happy eyeballs" algorithm.
+pub fn getAddressList(incoming_name: []const u8, allocator: std.mem.Allocator) !AddressList {
+    var name_buffer: [128][]const u8 = undefined;
+    const name = try dns.Name.fromString(incoming_name, &name_buffer);
 
-    const reply_packet = reply.packet;
+    var final_list = std.ArrayList(std.net.Address).init(allocator);
+    defer final_list.deinit();
 
-    if (packet.header.id != reply_packet.header.id) return error.InvalidReply;
-    if (!reply_packet.header.is_response) return error.InvalidResponse;
+    var addrs_v4 = try fetchTrustedAddresses(allocator, name, .A);
+    defer allocator.free(addrs_v4);
+    for (addrs_v4) |addr| try final_list.append(addr);
 
-    switch (reply_packet.header.response_code) {
-        .NoError => {},
-        .FormatError => return error.ServerFormatError, // bug in implementation caught by server?
-        .ServerFailure => return error.ServerFailure,
-        .NameError => return error.ServerNameError,
-        .NotImplemented => return error.ServerNotImplemented,
-        .Refused => return error.ServerRefused,
-    }
-
-    var list = std.ArrayList(std.net.Address).init(allocator);
-    defer list.deinit();
-
-    for (reply_packet.answers) |resource| {
-        var resource_data = try dns.ResourceData.fromOpaque(
-            reply_packet,
-            resource.typ,
-            resource.opaque_rdata,
-            allocator,
-        );
-        defer resource_data.deinit(allocator);
-
-        try list.append(resource_data.A);
-    }
+    var addrs_v6 = try fetchTrustedAddresses(allocator, name, .AAAA);
+    defer allocator.free(addrs_v6);
+    for (addrs_v6) |addr| try final_list.append(addr);
 
     return AddressList{
         .allocator = allocator,
-        .addrs = list.toOwnedSlice(),
+        .addrs = try final_list.toOwnedSlice(),
     };
 }

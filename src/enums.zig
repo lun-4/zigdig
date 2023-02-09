@@ -97,6 +97,17 @@ pub const ResourceClass = enum(u16) {
     HS = 4,
     WILDCARD = 255,
 
+    pub fn readFrom(reader: anytype) !@This() {
+        const resource_class_int = try reader.readIntBig(u16);
+        return std.meta.intToEnum(@This(), resource_class_int) catch |err| {
+            logger.err(
+                "unknown resource class {d}, got {s}",
+                .{ resource_class_int, @errorName(err) },
+            );
+            return err;
+        };
+    }
+
     pub fn writeTo(self: @This(), writer: anytype) !usize {
         try writer.writeIntBig(u16, @enumToInt(self));
         return 16 / 8;

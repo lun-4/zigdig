@@ -9,7 +9,7 @@ const Packet = dns.Packet;
 test "convert domain string to dns name" {
     const domain = "www.google.com";
     var name_buffer: [3][]const u8 = undefined;
-    var name = try dns.Name.fromString(domain[0..], &name_buffer);
+    var name = (try dns.Name.fromString(domain[0..], &name_buffer)).full;
     std.debug.assert(name.labels.len == 3);
     try std.testing.expect(std.mem.eql(u8, name.labels[0], "www"));
     try std.testing.expect(std.mem.eql(u8, name.labels[1], "google"));
@@ -77,7 +77,7 @@ fn expectGoogleLabels(actual: [][]const u8) !void {
     }
 }
 
-test "deserialization of original google.com/A" {
+test "deserialization of original question google.com/A" {
     var write_buffer: [0x10000]u8 = undefined;
 
     var decoded = try decodeBase64(TEST_PKT_QUERY, &write_buffer);
@@ -95,13 +95,14 @@ test "deserialization of original google.com/A" {
 
     const question = pkt.questions[0];
 
-    try expectGoogleLabels(question.name.labels);
-    try std.testing.expectEqual(@as(usize, 12), question.name.packet_index.?);
+    try expectGoogleLabels(question.name.?.full.labels);
+    try std.testing.expectEqual(@as(usize, 12), question.name.?.full.packet_index.?);
     try std.testing.expectEqual(question.typ, dns.ResourceType.A);
     try std.testing.expectEqual(question.class, dns.ResourceClass.IN);
 }
 
 test "deserialization of reply google.com/A" {
+    std.testing.log_level = .debug;
     var encode_buffer: [0x10000]u8 = undefined;
     var decoded = try decodeBase64(TEST_PKT_RESPONSE, &encode_buffer);
 
@@ -117,26 +118,27 @@ test "deserialization of reply google.com/A" {
 
     var question = pkt.questions[0];
 
-    try expectGoogleLabels(question.name.labels);
+    try expectGoogleLabels(question.name.?.full.labels);
     try testing.expectEqual(dns.ResourceType.A, question.typ);
     try testing.expectEqual(dns.ResourceClass.IN, question.class);
 
     var answer = pkt.answers[0];
 
-    try expectGoogleLabels(answer.name.labels);
+    try expectGoogleLabels(answer.name.?.full.labels);
     try testing.expectEqual(dns.ResourceType.A, answer.typ);
     try testing.expectEqual(dns.ResourceClass.IN, answer.class);
     try testing.expectEqual(@as(i32, 300), answer.ttl);
 
     const resource_data = try dns.ResourceData.fromOpaque(
-        pkt,
         .A,
-        answer.opaque_rdata,
-        std.testing.allocator,
+        answer.opaque_rdata.?,
+        .{},
     );
-    defer resource_data.deinit(std.testing.allocator);
 
-    try testing.expectEqual(dns.ResourceType.A, @as(dns.ResourceType, resource_data));
+    try testing.expectEqual(
+        dns.ResourceType.A,
+        @as(dns.ResourceType, resource_data),
+    );
 
     const addr = @ptrCast(*const [4]u8, &resource_data.A.in.sa.addr).*;
     try testing.expectEqual(@as(u8, 216), addr[0]);
@@ -197,11 +199,11 @@ fn serialTest(packet: Packet, write_buffer: []u8) ![]u8 {
 const FixedStream = std.io.FixedBufferStream([]const u8);
 fn deserialTest(packet_data: []const u8) !dns.IncomingPacket {
     var stream = FixedStream{ .buffer = packet_data, .pos = 0 };
-    const incoming_packet = try dns.Packet.readFrom(
+    return try dns.helpers.parseFullPacket(
         stream.reader(),
         std.testing.allocator,
+        .{ .allocator = std.testing.allocator },
     );
-    return incoming_packet;
 }
 
 test "convert string to dns type" {
@@ -239,7 +241,7 @@ test "resources have good sizes" {
 
     // name + rr (2) + class (2) + ttl (4) + rdlength (2)
     try testing.expectEqual(
-        @as(usize, name.networkSize() + 10 + resource.opaque_rdata.data.len),
+        @as(usize, name.networkSize() + 10 + resource.opaque_rdata.?.data.len),
         network_size,
     );
 }

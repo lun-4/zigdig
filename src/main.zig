@@ -3,7 +3,26 @@ const dns = @import("lib.zig");
 
 const logger = std.log.scoped(.zigdig_main);
 
+pub const std_options = struct {
+    pub const log_level = .debug;
+    pub const logFn = logfn;
+};
+
+pub var current_log_level: std.log.Level = .info;
+
+fn logfn(
+    comptime message_level: std.log.Level,
+    comptime scope: @Type(.EnumLiteral),
+    comptime format: []const u8,
+    args: anytype,
+) void {
+    if (@enumToInt(message_level) <= @enumToInt(@import("root").current_log_level)) {
+        std.log.defaultLog(message_level, scope, format, args);
+    }
+}
+
 pub fn main() !void {
+    if (std.mem.eql(u8, std.os.getenv("DEBUG") orelse "", "1")) current_log_level = .debug;
     var gpa = std.heap.GeneralPurposeAllocator(.{}){};
     defer {
         _ = gpa.deinit();
@@ -60,20 +79,31 @@ pub fn main() !void {
 
     logger.info("selected nameserver: {}\n", .{conn.address});
     const stdout = std.io.getStdOut();
-    try dns.helpers.printAsZoneFile(&packet, allocator, stdout.writer());
+    try dns.helpers.printAsZoneFile(&packet, undefined, stdout.writer());
 
     try conn.sendPacket(packet);
 
-    const reply = try conn.receivePacket(allocator, 4096);
-    defer reply.deinit();
+    // as we need Names inside the NamePool to live beyond the
+    // ReplyPacket, we must take ownership of them and deinit ourselves
+    //
+    // This is required to parse names inside printAsZoneFile
+    var name_pool = dns.NamePool.init(allocator);
+    defer name_pool.deinitWithNames();
+
+    const reply = try conn.receiveFullPacket(
+        allocator,
+        4096,
+        .{ .allocator = allocator, .name_pool = &name_pool },
+    );
+    defer reply.deinit(.{ .names = false });
 
     const reply_packet = reply.packet;
-    logger.info("reply: {}", .{reply_packet});
+    logger.debug("reply: {}", .{reply_packet});
 
     try std.testing.expectEqual(packet.header.id, reply_packet.header.id);
     try std.testing.expect(reply_packet.header.is_response);
 
-    try dns.helpers.printAsZoneFile(reply_packet, allocator, stdout.writer());
+    try dns.helpers.printAsZoneFile(reply_packet, &name_pool, stdout.writer());
 }
 
 test "awooga" {
