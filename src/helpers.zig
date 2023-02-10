@@ -174,7 +174,6 @@ pub fn parseFullPacket(
     }
 
     var packet = try allocator.create(dns.Packet);
-    packet.extra_names = null;
     errdefer allocator.destroy(packet);
     var incoming_packet = dns.IncomingPacket{
         .allocator = allocator,
@@ -318,7 +317,6 @@ const AddressList = struct {
 const ReceiveTrustedAddressesOptions = struct {
     max_incoming_message_size: usize = 4096,
     requested_packet_header: ?dns.Header = null,
-    //resource_resolution_options: dns.ResourceResolutionOptions = .{},
 };
 
 /// This is an optimized deserializer that is only interested in A and AAAA

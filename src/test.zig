@@ -16,7 +16,7 @@ test "convert domain string to dns name" {
     try std.testing.expect(std.mem.eql(u8, name.labels[2], "com"));
 }
 
-test "convert domain string to dns name (buffer underrun)" {
+test "convert domain string to dns name (buffer overflow case)" {
     const domain = "www.google.com";
     var name_buffer: [1][]const u8 = undefined;
     _ = dns.Name.fromString(domain[0..], &name_buffer) catch |err| switch (err) {

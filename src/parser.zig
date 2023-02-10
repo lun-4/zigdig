@@ -11,31 +11,8 @@ pub fn parser(
     return Parser(@TypeOf(reader)).init(reader, ctx, options);
 }
 
-fn Output(typ: type) type {
-    return switch (typ) {
-        dns.Question => dns.Question,
-        dns.Resource => dns.Resource,
-        else => @compileError("invalid input to resolve"),
-    };
-}
-
 pub const ResourceResolutionOptions = struct {
     max_follow: usize = 32,
-};
-
-pub const NamePool = struct {
-    allocator: std.mem.Allocator,
-
-    const Self = @This();
-
-    pub fn init(allocator: std.mem.Allocator) Self {
-        return .{ .allocator = allocator };
-    }
-
-    fn resolve(raw_data: anytype, options: ResourceResolutionOptions) Output(@TypeOf(raw_data)) {
-        _ = options;
-        @compileError("TODO");
-    }
 };
 
 const ParserState = enum {
