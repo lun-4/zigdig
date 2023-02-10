@@ -11,9 +11,9 @@ naive dns client library in zig
 ## what does it not do
  - no edns0
  - support all resolv.conf options
- - can deserialize pointer labels (seamless for library user), but does not
-    serialize into pointers
- - follow CNAME records
+ - can deserialize pointer labels, but does not serialize into pointers
+ - follow CNAME records, this provides only the basic
+   serialization/deserializtion
 
 ## how do
 
@@ -35,6 +35,12 @@ and then
 zigdig google.com a
 ```
 
+or, for the host(1) equivalent
+
+```bash
+zigdig-tiny google.com
+```
+
 ## using the library
 
 ### getAddressList-style api
@@ -53,7 +59,7 @@ pub fn main() !void {
     defer addresses.deinit();
 
     for (addresses.addrs) |address| {
-        std.debug.print("we live in a society {}", .{address});
+        std.debug.print("we live in a society {}\n", .{address});
     }
 }
 ```
