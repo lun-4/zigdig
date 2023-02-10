@@ -47,7 +47,7 @@ test "Packet serialize/deserialize" {
 
     // deserialize it and compare if everythings' equal
     var incoming = try deserialTest(buf);
-    defer incoming.deinit();
+    defer incoming.deinit(.{});
     const deserialized = incoming.packet;
 
     try std.testing.expectEqual(deserialized.header.id, packet.header.id);
@@ -83,7 +83,7 @@ test "deserialization of original question google.com/A" {
     var decoded = try decodeBase64(TEST_PKT_QUERY, &write_buffer);
 
     var incoming = try deserialTest(decoded);
-    defer incoming.deinit();
+    defer incoming.deinit(.{});
     const pkt = incoming.packet;
 
     try std.testing.expectEqual(@as(u16, 5189), pkt.header.id);
@@ -107,7 +107,7 @@ test "deserialization of reply google.com/A" {
     var decoded = try decodeBase64(TEST_PKT_RESPONSE, &encode_buffer);
 
     var incoming = try deserialTest(decoded);
-    defer incoming.deinit();
+    defer incoming.deinit(.{});
     const pkt = incoming.packet;
 
     try std.testing.expectEqual(@as(u16, 17613), pkt.header.id);
