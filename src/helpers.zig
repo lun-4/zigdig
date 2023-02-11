@@ -1,7 +1,6 @@
 const std = @import("std");
 const dns = @import("lib.zig");
 
-/// Print a slice of DNSResource to stderr.
 fn printList(
     name_pool: *dns.NamePool,
     writer: anytype,
@@ -21,7 +20,7 @@ fn printList(
         );
         defer switch (resource_data) {
             .TXT => resource_data.deinit(name_pool.allocator),
-            else => {}, // managed a layer above
+            else => {}, // names are owned by given NamePool
         };
 
         try writer.print("{?}\t\t{s}\t{s}\t{d}\t{any}\n", .{
@@ -98,12 +97,15 @@ pub fn printAsZoneFile(
     }
 }
 
+/// Generate a random header ID to use in a query.
 pub fn randomHeaderId() u16 {
     const seed = @truncate(u64, @bitCast(u128, std.time.nanoTimestamp()));
     var r = std.rand.DefaultPrng.init(seed);
     return r.random().int(u16);
 }
 
+/// High level wrapper around a single UDP connection to send and receive
+/// DNS packets.
 pub const DNSConnection = struct {
     address: std.net.Address,
     socket: std.net.Stream,
@@ -151,27 +153,35 @@ pub const DNSConnection = struct {
         packet_allocator: std.mem.Allocator,
         /// Maximum size for the incoming UDP datagram
         comptime max_incoming_message_size: usize,
-        options: dns.ParserOptions,
+        options: ParseFullPacketOptions,
     ) !dns.IncomingPacket {
         var packet_buffer: [max_incoming_message_size]u8 = undefined;
         const read_bytes = try self.socket.read(&packet_buffer);
         const packet_bytes = packet_buffer[0..read_bytes];
         logger.debug("read {d} bytes", .{read_bytes});
 
-        var stream = std.io.FixedBufferStream([]const u8){ .buffer = packet_bytes, .pos = 0 };
+        var stream = std.io.FixedBufferStream([]const u8){
+            .buffer = packet_bytes,
+            .pos = 0,
+        };
         return parseFullPacket(stream.reader(), packet_allocator, options);
     }
 };
 
+pub const ParseFullPacketOptions = struct {
+    /// Use this NamePool to let deserialization of names outlive the call
+    /// to parseFullPacket.
+    ///
+    /// Useful if you need to parse RDATA sections after parseFullPacket.
+    name_pool: ?*dns.NamePool = null,
+};
+
 pub fn parseFullPacket(
     reader: anytype,
-    // TODO separate allocator and options.allocator
     allocator: std.mem.Allocator,
-    options: dns.ParserOptions,
+    parse_full_packet_options: ParseFullPacketOptions,
 ) !dns.IncomingPacket {
-    if (options.allocator == null) {
-        @panic("parseFullPacket requires options.allocator to be set");
-    }
+    var parser_options = dns.ParserOptions{ .allocator = allocator };
 
     var packet = try allocator.create(dns.Packet);
     errdefer allocator.destroy(packet);
@@ -181,12 +191,15 @@ pub fn parseFullPacket(
     };
 
     var ctx = dns.ParserContext{};
-    var parser = dns.parser(reader, &ctx, options);
+    var parser = dns.parser(reader, &ctx, parser_options);
 
     var builtin_name_pool = dns.NamePool.init(allocator);
     defer builtin_name_pool.deinit();
 
-    var name_pool = if (options.name_pool) |name_pool| name_pool else &builtin_name_pool;
+    var name_pool = if (parse_full_packet_options.name_pool) |name_pool|
+        name_pool
+    else
+        &builtin_name_pool;
 
     var questions = std.ArrayList(dns.Question).init(allocator);
     defer questions.deinit();
@@ -204,14 +217,13 @@ pub fn parseFullPacket(
         switch (part) {
             .header => |header| packet.header = header,
             .question => |question_with_raw_names| {
-                var question = try name_pool.transmuteResource(question_with_raw_names);
+                var question =
+                    try name_pool.transmuteResource(question_with_raw_names);
                 try questions.append(question);
             },
             .end_question => packet.questions = try questions.toOwnedSlice(),
             .answer, .nameserver, .additional => |raw_resource| {
-                // since we give it an allocator, we don't receive rdata
-                // sections
-
+                // since we give it an allocator, we don't receive rdata frames
                 var resource = try name_pool.transmuteResource(raw_resource);
                 try (switch (part) {
                     .answer => answers,
@@ -376,7 +388,7 @@ pub fn receiveTrustedAddresses(
             },
 
             .answer_rdata => |rdata| {
-                // TODO parser.reader()
+                // TODO parser.reader()?
                 var reader = parser.wrapper_reader.reader();
                 defer current_resource = null;
                 var maybe_addr = switch (current_resource.?.typ) {
@@ -417,8 +429,6 @@ fn fetchTrustedAddresses(
             .wanted_recursion = true,
             .question_length = 1,
         },
-
-        // TODO test if we can put more than one question and itll reply with all
         .questions = &[_]dns.Question{
             .{
                 .name = name,
@@ -439,8 +449,12 @@ fn fetchTrustedAddresses(
     return try receiveTrustedAddresses(allocator, &conn, .{});
 }
 
-/// A very simple getAddressList that sets up the DNS connection and extracts
-/// the A records.
+/// A getAddressList-like function that:
+///  - gets a nameserver from resolv.conf
+///  - starts a DNSConnection
+///  - extracts A/AAAA records and turns them into std.net.Address
+///
+/// The only memory allocated here is for the list that holds std.net.Address.
 ///
 /// This function does not implement the "happy eyeballs" algorithm.
 pub fn getAddressList(incoming_name: []const u8, allocator: std.mem.Allocator) !AddressList {

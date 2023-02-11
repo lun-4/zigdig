@@ -3,6 +3,7 @@ const dns = @import("lib.zig");
 
 const logger = std.log.scoped(.dns_name);
 
+/// Represents a raw component of a DNS label.
 pub const LabelComponent = union(enum) {
     Full: []const u8,
     /// Holds the first offset component of that pointer.
@@ -13,9 +14,9 @@ pub const LabelComponent = union(enum) {
     Null: void,
 };
 
+/// A raw name that may end in a Pointer LabelComponent.
 pub const RawName = struct {
-    // TODO rename this to components
-    labels: []LabelComponent,
+    components: []LabelComponent,
 
     /// Represents the index of that name in its packet's body.
     ///
@@ -23,26 +24,24 @@ pub const RawName = struct {
     packet_index: ?usize = null,
 };
 
-const ReadNameOptions = struct {
-    max_label_count: usize = 128,
-    is_rdata: bool = false,
-};
-
+/// Wrapper class for safer handling of names
 pub const Name = union(enum) {
     raw: RawName,
     full: FullName,
 
     const Self = @This();
 
+    /// Deinitializes the entire name, including the labels inside, given
+    /// an allocator.
     pub fn deinit(self: Self, allocator: std.mem.Allocator) void {
         switch (self) {
             .raw => |raw| {
-                for (raw.labels) |label| switch (label) {
+                for (raw.components) |label| switch (label) {
                     .Full => |data| allocator.free(data),
                     else => {},
                 };
 
-                allocator.free(raw.labels);
+                allocator.free(raw.components);
             },
             .full => |full| {
                 for (full.labels) |label| allocator.free(label);
@@ -62,7 +61,7 @@ pub const Name = union(enum) {
             var components = std.ArrayList(LabelComponent).init(allocator);
             defer components.deinit();
 
-            var is_raw: bool = false;
+            var has_pointer: bool = false;
 
             while (true) {
                 if (components.items.len > options.max_label_size)
@@ -74,15 +73,15 @@ pub const Name = union(enum) {
                 switch (component) {
                     .Null => break,
                     .Pointer => {
-                        is_raw = true;
+                        has_pointer = true;
                         break;
                     },
                     else => {},
                 }
             }
 
-            return if (is_raw) .{ .raw = .{
-                .labels = try components.toOwnedSlice(),
+            return if (has_pointer) .{ .raw = .{
+                .components = try components.toOwnedSlice(),
                 .packet_index = current_byte_index,
             } } else .{
                 .full = try FullName.fromAssumedComponents(
@@ -95,7 +94,7 @@ pub const Name = union(enum) {
             // skip the name in the reader
             var name_index: usize = 0;
 
-            while (true) {
+            while (true) : (name_index += 1) {
                 if (name_index > options.max_label_size)
                     return error.Overflow;
 
@@ -110,7 +109,7 @@ pub const Name = union(enum) {
         }
     }
 
-    /// Deserialize a LabelComponent, which can be:
+    /// Deserialize a single LabelComponent, which can be:
     ///  - a pointer
     ///  - a full label ([]const u8)
     ///  - a null octet
@@ -182,12 +181,16 @@ pub const Name = union(enum) {
         }
     }
 
+    /// Write the network representation of a name onto a stream.
     pub fn writeTo(self: Self, writer: anytype) !usize {
         return switch (self) {
-            .raw => unreachable, // must resolve against original packet so that we know the full name
+            // NOTE we don't serialize to pointers.
+            .raw => unreachable, // must convert to full name to be able to write
             .full => |full| try full.writeTo(writer),
         };
     }
+
+    /// Return the byte size of the network representation of the name.
     pub fn networkSize(self: Self) usize {
         return switch (self) {
             .raw => unreachable, // must resolve against original packet so that we know the full name
@@ -195,6 +198,7 @@ pub const Name = union(enum) {
         };
     }
 
+    /// Create a FullName with a given buffer that will hold its labels.
     pub fn fromString(domain: []const u8, buffer: [][]const u8) !Self {
         return .{ .full = try FullName.fromString(domain, buffer) };
     }
@@ -207,7 +211,7 @@ pub const Name = union(enum) {
     ) !void {
         return switch (self) {
             .full => |full| full.format(f, options, writer),
-            .raw => |raw| for (raw.labels) |component| switch (component) {
+            .raw => |raw| for (raw.components) |component| switch (component) {
                 .Pointer => |ptr| try std.fmt.format(writer, "(pointer={d}).", .{ptr}),
                 .Full => |label| try std.fmt.format(writer, "{s}.", .{label}),
                 .Null => break,
@@ -216,15 +220,15 @@ pub const Name = union(enum) {
     }
 };
 
-/// Represents a single DNS domain-name, which is a slice of strings.
+/// Represents a single DNS domain name, which is a slice of strings.
 ///
 /// The "www.google.com" friendly domain name can be represented in DNS as a
 /// sequence of labels: first "www", then "google", then "com", with a length
 /// prefix for all of them, ending in a null byte.
 ///
-/// Keep in mind Name's are not singularly deserializeable, as the names
-/// could be pointers to different bytes in the packet.
-/// (RFC1035, section 4.1.4 Message Compression)
+/// For RawName, the names may end in a pointer that is dependent on the overall
+/// parsing context of the packet. To be able to turn a RawName into a FullName,
+/// look at NamePool.transmuteName
 pub const FullName = struct {
     /// The name's labels.
     labels: [][]const u8,
@@ -239,6 +243,9 @@ pub const FullName = struct {
     /// Create a FullName from a []LabelComponent.
     ///
     /// Assumes that the slice does not end in a pointer.
+    ///
+    /// Does not take ownership of the returned slice.
+    /// Caller owns returned memory.
     pub fn fromAssumedComponents(
         allocator: std.mem.Allocator,
         components: []LabelComponent,
@@ -262,7 +269,7 @@ pub const FullName = struct {
     /// Only use this if you have manually heap allocated a Name
     /// through the internal Packet.readName function.
     ///
-    /// IncomingPacket.deinit already frees alloccated Names.
+    /// IncomingPacket.deinit already frees allocated Names.
     pub fn deinit(self: Self, allocator: std.mem.Allocator) void {
         for (self.labels) |label| allocator.free(label);
         allocator.free(self.labels);
@@ -283,16 +290,22 @@ pub const FullName = struct {
     }
 
     /// Get a Name out of a domain name ("www.google.com", for example).
-    pub fn fromString(domain: []const u8, buffer: [][]const u8) !Self {
+    pub fn fromString(domain: []const u8, buffer: [][]const u8) error{
+        /// The given domain contains an empty label (e.g "google...com")
+        ///
+        /// Empty labels are disallowed in DNS, as "length 0" label is also
+        /// determined as the Null label, which ends a name.
+        EmptyLabelInName,
+        /// The given DNS name has too many labels for the given buffer to hold.
+        Overflow,
+    }!Self {
         if (domain.len > 255) return error.Overflow;
 
         var it = std.mem.split(u8, domain, ".");
         var idx: usize = 0;
         while (it.next()) |label| {
             if (label.len == 0) return error.EmptyLabelInName;
-
-            // Is there a better error for this?
-            if (idx > (buffer.len - 1)) return error.Underflow; // buffer too small
+            if (idx > (buffer.len - 1)) return error.Overflow;
 
             buffer[idx] = label;
             idx += 1;
@@ -338,6 +351,12 @@ pub const FullName = struct {
 
 const NameList = std.ArrayList(dns.Name);
 
+/// Implements RFC1035, section 4.1.4 Message Compression.
+///
+/// This is an entity that holds Name entities inside, with their respective
+/// locations inside the packet. With that information, it is able to convert
+/// from a RawName given by deserialization into a FullName that contains
+/// all wanted labels.
 pub const NamePool = struct {
     allocator: std.mem.Allocator,
     held_names: NameList,
@@ -362,7 +381,7 @@ pub const NamePool = struct {
     /// Convert dns.RawName or FullName to FullName, applying pointer
     /// resolution, and storing the name for future pointers to be resolved.
     ///
-    /// takes ownership of the given name.
+    /// takes ownership of the given name's memory.
     pub fn transmuteName(self: *Self, name: dns.Name) !dns.Name {
         return switch (name) {
             .full => blk: {
@@ -375,7 +394,7 @@ pub const NamePool = struct {
                 var resolved_labels = std.ArrayList([]const u8).init(self.allocator);
                 defer resolved_labels.deinit();
 
-                for (raw.labels) |raw_component| switch (raw_component) {
+                for (raw.components) |raw_component| switch (raw_component) {
                     .Full => |text| try resolved_labels.append(try self.allocator.dupe(u8, text)),
                     .Pointer => |packet_offset| {
 
@@ -459,7 +478,8 @@ pub const NamePool = struct {
     /// to be able to do this, ALL questions and resources must be registered
     /// in the NamePool.
     ///
-    /// this takes ownership of the given resource.
+    /// this takes ownership of the given resource, returning a new one with
+    /// FullName set in the respective "name" union field.
     pub fn transmuteResource(self: *Self, resource: anytype) !@TypeOf(resource) {
         switch (@TypeOf(resource)) {
             dns.Question => {

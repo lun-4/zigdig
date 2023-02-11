@@ -7,6 +7,9 @@ const ResourceClass = dns.ResourceClass;
 
 const logger = std.log.scoped(.dns_packet);
 
+/// Represents the response code of the packet.
+///
+/// RCODE, in https://datatracker.ietf.org/doc/html/rfc1035#section-4.1.1
 pub const ResponseCode = enum(u4) {
     NoError = 0,
 
@@ -34,15 +37,23 @@ pub const ResponseCode = enum(u4) {
     Refused = 5,
 };
 
+/// OPCODE from https://datatracker.ietf.org/doc/html/rfc1035#section-4.1.1
+///
+/// This value is set by the originator of a query and copied into the response.
 pub const OpCode = enum(u4) {
+    /// a standard query (QUERY)
     Query = 0,
+    /// an inverse query (IQUERY)
     InverseQuery = 1,
+    /// a server status request (STATUS)
     ServerStatusRequest = 2,
 
     // rest is unused as per RFC1035
 };
 
 /// Describes the header of a DNS packet.
+///
+/// https://datatracker.ietf.org/doc/html/rfc1035#section-4.1.1
 pub const Header = packed struct {
     /// The ID of the packet. Replies to a packet MUST have the same ID.
     id: u16 = 0,
@@ -92,6 +103,7 @@ pub const Header = packed struct {
 
     const Self = @This();
 
+    /// Read a header from its network representation in a stream.
     pub fn readFrom(byte_reader: anytype) !Self {
         var self = Self{};
 
@@ -119,6 +131,7 @@ pub const Header = packed struct {
         return self;
     }
 
+    /// Write the network representation of a header to the given writer.
     pub fn writeTo(self: Self, byte_writer: anytype) !usize {
         var writer = std.io.bitWriter(.Big, byte_writer);
 
@@ -147,14 +160,18 @@ pub const Header = packed struct {
     }
 };
 
+/// Represents a DNS question.
+///
+/// https://datatracker.ietf.org/doc/html/rfc1035#section-4.1.2
 pub const Question = struct {
     name: ?dns.Name,
     typ: ResourceType,
-    class: ResourceClass,
+    class: ResourceClass = .IN,
 
     const Self = @This();
 
     pub fn readFrom(reader: anytype, options: dns.ParserOptions) !Self {
+        // TODO assert reader is WrapperReader
         logger.debug(
             "reading question at {d} bytes",
             .{reader.context.ctx.current_byte_count},
@@ -173,6 +190,8 @@ pub const Question = struct {
 };
 
 /// DNS resource
+///
+/// https://datatracker.ietf.org/doc/html/rfc1035#section-4.1.3
 pub const Resource = struct {
     name: ?dns.Name,
     typ: ResourceType,
@@ -180,8 +199,10 @@ pub const Resource = struct {
 
     ttl: i32,
 
-    /// Opaque Resource Data.
-    /// Parsing of the data in this is done by a separate package, dns.rdata
+    /// Opaque Resource Data. This holds the bytes representing the RDATA
+    /// section of the resource, with some metadata for pointer resolution.
+    ///
+    /// To parse this section, use dns.ResourceData.fromOpaque
     opaque_rdata: ?dns.ResourceData.Opaque,
 
     const Self = @This();
@@ -211,7 +232,11 @@ pub const Resource = struct {
     }
 
     pub fn readFrom(reader: anytype, options: dns.ParserOptions) !Self {
-        logger.debug("reading resource at {d} bytes", .{reader.context.ctx.current_byte_count});
+        // TODO assert reader is WrapperReader
+        logger.debug(
+            "reading resource at {d} bytes",
+            .{reader.context.ctx.current_byte_count},
+        );
         var name = try Name.readFrom(reader, options);
         var typ = try ResourceType.readFrom(reader);
         var class = try ResourceClass.readFrom(reader);
@@ -238,11 +263,17 @@ pub const Resource = struct {
         try writer.writeIntBig(u16, @intCast(u16, self.opaque_rdata.?.data.len));
         const rdata_size = try writer.write(self.opaque_rdata.?.data);
 
-        return name_size + typ_size + class_size + ttl_size + rdata_prefix_size + rdata_size;
+        return name_size + typ_size + class_size + ttl_size +
+            rdata_prefix_size + rdata_size;
     }
 };
 
 /// A DNS packet, as specified in RFC1035.
+///
+/// Beware, the amount of questions or resources given in this Packet
+/// MUST be synchronized with the lengths set in the Header field.
+///
+/// https://datatracker.ietf.org/doc/html/rfc1035#section-4.1
 pub const Packet = struct {
     header: Header,
     questions: []Question,
@@ -284,7 +315,8 @@ pub const Packet = struct {
         const additionals_size = try Self.writeResourceListTo(self.additionals, writer);
 
         logger.debug(
-            "header = {d}, question_size = {d}, answers_size = {d}, nameservers_size = {d}, additionals_size = {d}",
+            "header = {d}, question_size = {d}, answers_size = {d}," ++
+                " nameservers_size = {d}, additionals_size = {d}",
             .{ header_size, question_size, answers_size, nameservers_size, additionals_size },
         );
 
@@ -293,7 +325,7 @@ pub const Packet = struct {
     }
 };
 
-/// Represents a Packet where all of its data was allocated dynamically
+/// Represents a Packet where all of its data was allocated dynamically.
 pub const IncomingPacket = struct {
     allocator: std.mem.Allocator,
     packet: *Packet,
@@ -319,6 +351,10 @@ pub const IncomingPacket = struct {
     }
 
     pub const DeinitOptions = struct {
+        /// If the names inside the packet should be deinitialized or not.
+        ///
+        /// This should be set to false if you are passing ownership of the Name
+        /// to dns.NamePool, as it has dns.NamePool.deinitWithNames().
         names: bool = true,
     };
 

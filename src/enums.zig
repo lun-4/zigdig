@@ -38,7 +38,7 @@ pub const ResourceType = enum(u16) {
     // ANY = 255,
 
     // should this enum be non-exhaustive?
-    // trying to get it non-exhaustive gives "TODO @tagName on non-exhaustive enum https://github.com/ziglang/zig/issues/3991"
+    // what does it actually mean to be non-exhaustive?
     //_,
 
     const Self = @This();
@@ -81,6 +81,9 @@ pub const ResourceType = enum(u16) {
         };
     }
 
+    /// Write the network representation of this type to a stream.
+    ///
+    /// Returns amount of bytes written.
     pub fn writeTo(self: Self, writer: anytype) !usize {
         try writer.writeIntBig(u16, @enumToInt(self));
         return 16 / 8;
@@ -108,6 +111,9 @@ pub const ResourceClass = enum(u16) {
         };
     }
 
+    /// Write the network representation of this class to a stream.
+    ///
+    /// Returns amount of bytes written.
     pub fn writeTo(self: @This(), writer: anytype) !usize {
         try writer.writeIntBig(u16, @enumToInt(self));
         return 16 / 8;

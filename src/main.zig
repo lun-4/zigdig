@@ -52,7 +52,7 @@ pub fn main() !void {
     var name_buffer: [128][]const u8 = undefined;
     const name = try dns.Name.fromString(name_string, &name_buffer);
 
-    // create our packet
+    // create question packet
     var packet = dns.Packet{
         .header = .{
             .id = dns.helpers.randomHeaderId(),
@@ -79,21 +79,22 @@ pub fn main() !void {
 
     logger.info("selected nameserver: {}\n", .{conn.address});
     const stdout = std.io.getStdOut();
+
+    // print out our same question as a zone file for debugging purposes
     try dns.helpers.printAsZoneFile(&packet, undefined, stdout.writer());
 
     try conn.sendPacket(packet);
 
-    // as we need Names inside the NamePool to live beyond the
-    // ReplyPacket, we must take ownership of them and deinit ourselves
-    //
-    // This is required to parse names inside printAsZoneFile
+    // as we need Names inside the NamePool to live beyond the call to
+    // receiveFullPacket (since we need to deserialize names in RDATA)
+    // we must take ownership of them and deinit ourselves
     var name_pool = dns.NamePool.init(allocator);
     defer name_pool.deinitWithNames();
 
     const reply = try conn.receiveFullPacket(
         allocator,
         4096,
-        .{ .allocator = allocator, .name_pool = &name_pool },
+        .{ .name_pool = &name_pool },
     );
     defer reply.deinit(.{ .names = false });
 

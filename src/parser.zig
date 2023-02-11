@@ -3,6 +3,11 @@ const dns = @import("lib.zig");
 
 const logger = std.log.scoped(.dns_parser);
 
+/// Create a Parser object out of a reader, context, and options.
+///
+/// If you do not wish to have full control over deserialization, look at
+/// dns.helpers.parseFullPacket, which is a wrapper around the Parser that
+/// allocates everything.
 pub fn parser(
     reader: anytype,
     ctx: *ParserContext,
@@ -27,6 +32,8 @@ const ParserState = enum {
     done,
 };
 
+/// A given frame from the parser, depending on the given options, some frames
+/// will not be emitted by Parser.next, look at options for more information.
 pub const ParserFrame = union(enum) {
     header: dns.Header,
 
@@ -70,10 +77,30 @@ pub const ResourceDataHolder = struct {
 };
 
 pub const ParserOptions = struct {
-    /// Give an allocator if you want names to appear properly.
+    /// When given an allocator, the following happens:
+    ///  - the parser creates RawName or FullName entities for the
+    ///    respective entities with names on them.
+    ///    (RawName when names end in Pointers, FullName when not)
+    ///  - the parser will automatically allocate RDATA sections inside
+    ///    Resource entities. It is on the parser's client to free the memory
+    ///    (e.g by putting it inside an IncomingPacket's Packet)
+    ///
+    /// If allocator is null, the following happens:
+    ///  - The name fields will be set to null.
+    ///  - answer_rdata, nameserver_rdata, additional_rdata events are
+    ///    emitted so the client of the Parser interface can decide if they
+    ///    will be allocated, or parsed onto the stack, or something else.
+    ///
+    /// It is required to pass an allocator to have any access to name
+    /// information. We can't parse the names in a standalone manner as
+    /// they are usually the *first* field in a Question or Resource, so we
+    /// need to decide if we read and allocate, or skip and don't.
     allocator: ?std.mem.Allocator = null,
-    name_pool: ?*dns.NamePool = null,
 
+    /// The maximum amount of labels in a name while parsing.
+    ///
+    /// Makes parser return `error.Overflow` when
+    /// the given name to deserialize surpasses the value in this field.
     max_label_size: usize = 32,
 };
 
@@ -125,6 +152,9 @@ pub fn WrapperReader(comptime ReaderType: anytype) type {
 }
 
 /// Low level parser for DNS packets.
+///
+/// There are two wrappers for this parser, dns.helpers.parseFullPacket,
+/// and dns.helpers.receiveTrustedAddresses.
 pub fn Parser(comptime ReaderType: type) type {
     const WrapperR = WrapperReader(ReaderType);
 
@@ -136,7 +166,11 @@ pub fn Parser(comptime ReaderType: type) type {
 
         const Self = @This();
 
-        pub fn init(incoming_reader: ReaderType, ctx: *ParserContext, options: ParserOptions) Self {
+        pub fn init(
+            incoming_reader: ReaderType,
+            ctx: *ParserContext,
+            options: ParserOptions,
+        ) Self {
             var self = Self{
                 .wrapper_reader = WrapperR{
                     .underlying_reader = incoming_reader,
@@ -149,6 +183,7 @@ pub fn Parser(comptime ReaderType: type) type {
             return self;
         }
 
+        /// Receive the next frame from the parser.
         pub fn next(self: *Self) !?ParserFrame {
             // self.state dictates what we *want* from the reader
             // at the moment, first state always being header.

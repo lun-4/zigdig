@@ -20,7 +20,7 @@ test "convert domain string to dns name (buffer overflow case)" {
     const domain = "www.google.com";
     var name_buffer: [1][]const u8 = undefined;
     _ = dns.Name.fromString(domain[0..], &name_buffer) catch |err| switch (err) {
-        error.Underflow => {},
+        error.Overflow => {},
         else => return err,
     };
 }
@@ -102,7 +102,6 @@ test "deserialization of original question google.com/A" {
 }
 
 test "deserialization of reply google.com/A" {
-    std.testing.log_level = .debug;
     var encode_buffer: [0x10000]u8 = undefined;
     var decoded = try decodeBase64(TEST_PKT_RESPONSE, &encode_buffer);
 
@@ -202,7 +201,7 @@ fn deserialTest(packet_data: []const u8) !dns.IncomingPacket {
     return try dns.helpers.parseFullPacket(
         stream.reader(),
         std.testing.allocator,
-        .{ .allocator = std.testing.allocator },
+        .{},
     );
 }
 
