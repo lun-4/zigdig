@@ -428,7 +428,7 @@ pub const NamePool = struct {
                             var label_cursor: usize = referenced_name.packet_index.?;
                             var label_index: ?usize = null;
 
-                            for (referenced_name.labels) |label, idx| {
+                            for (referenced_name.labels, 0..) |label, idx| {
                                 // if cursor is in offset's range, select that
                                 // label onwards as our new label
                                 const label_start = label_cursor;

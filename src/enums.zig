@@ -54,7 +54,7 @@ pub const ResourceType = enum(u16) {
         // TODO we wouldn't need this buffer if we could do some
         // case insensitive string comparison in stdlib or something
         var buffer: [10]u8 = undefined;
-        for (str) |char, index| {
+        for (str, 0..) |char, index| {
             buffer[index] = std.ascii.toUpper(char);
         }
 

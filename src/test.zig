@@ -72,7 +72,7 @@ fn decodeBase64(encoded: []const u8, write_buffer: []u8) ![]const u8 {
 }
 
 fn expectGoogleLabels(actual: [][]const u8) !void {
-    for (actual) |label, idx| {
+    for (actual, 0..) |label, idx| {
         try std.testing.expectEqualSlices(u8, label, GOOGLE_COM_LABELS[idx]);
     }
 }
