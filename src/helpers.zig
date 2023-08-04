@@ -99,7 +99,7 @@ pub fn printAsZoneFile(
 
 /// Generate a random header ID to use in a query.
 pub fn randomHeaderId() u16 {
-    const seed = @truncate(u64, @bitCast(u128, std.time.nanoTimestamp()));
+    const seed = @as(u64, @truncate(@as(u128, @bitCast(std.time.nanoTimestamp()))));
     var r = std.rand.DefaultPrng.init(seed);
     return r.random().int(u16);
 }
@@ -289,7 +289,7 @@ pub fn randomNameserver(output_buffer: []u8) !?[]const u8 {
         }
     }
 
-    const seed = @truncate(u64, @bitCast(u128, std.time.nanoTimestamp()));
+    const seed = @as(u64, @truncate(@as(u128, @bitCast(std.time.nanoTimestamp()))));
     var r = std.rand.DefaultPrng.init(seed);
     const selected = r.random().uintLessThan(usize, nameserver_amount);
 
@@ -422,6 +422,14 @@ fn fetchTrustedAddresses(
     name: dns.Name,
     qtype: dns.ResourceType,
 ) ![]std.net.Address {
+    var questions = [_]dns.Question{
+        .{
+            .name = name,
+            .typ = qtype,
+            .class = .IN,
+        },
+    };
+
     var packet = dns.Packet{
         .header = .{
             .id = dns.helpers.randomHeaderId(),
@@ -429,13 +437,7 @@ fn fetchTrustedAddresses(
             .wanted_recursion = true,
             .question_length = 1,
         },
-        .questions = &[_]dns.Question{
-            .{
-                .name = name,
-                .typ = qtype,
-                .class = .IN,
-            },
-        },
+        .questions = &questions,
         .answers = &[_]dns.Resource{},
         .nameservers = &[_]dns.Resource{},
         .additionals = &[_]dns.Resource{},

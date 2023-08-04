@@ -139,7 +139,7 @@ test "deserialization of reply google.com/A" {
         @as(dns.ResourceType, resource_data),
     );
 
-    const addr = @ptrCast(*const [4]u8, &resource_data.A.in.sa.addr).*;
+    const addr = @as(*const [4]u8, @ptrCast(&resource_data.A.in.sa.addr)).*;
     try testing.expectEqual(@as(u8, 216), addr[0]);
     try testing.expectEqual(@as(u8, 58), addr[1]);
     try testing.expectEqual(@as(u8, 202), addr[2]);
@@ -161,6 +161,14 @@ test "serialization of google.com/A (question)" {
     var name_buffer: [2][]const u8 = undefined;
     var name = try dns.Name.fromString(domain[0..], &name_buffer);
 
+    var questions = [_]dns.Question{.{
+        .name = name,
+        .typ = .A,
+        .class = .IN,
+    }};
+
+    var empty = [0]dns.Resource{};
+
     var packet = dns.Packet{
         .header = .{
             .id = 5189,
@@ -168,14 +176,10 @@ test "serialization of google.com/A (question)" {
             .z = 2,
             .question_length = 1,
         },
-        .questions = &[_]dns.Question{.{
-            .name = name,
-            .typ = .A,
-            .class = .IN,
-        }},
-        .answers = &[_]dns.Resource{},
-        .nameservers = &[_]dns.Resource{},
-        .additionals = &[_]dns.Resource{},
+        .questions = &questions,
+        .answers = &empty,
+        .nameservers = &empty,
+        .additionals = &empty,
     };
 
     var encode_buffer: [256]u8 = undefined;
@@ -261,6 +265,16 @@ test "rdata serialization" {
     _ = try resource_data.writeTo(stream.writer());
     const opaque_rdata = stream.getWritten();
 
+    var answers = [_]dns.Resource{.{
+        .name = name,
+        .typ = .A,
+        .class = .IN,
+        .ttl = 300,
+        .opaque_rdata = .{ .data = opaque_rdata, .current_byte_count = 0 },
+    }};
+
+    var empty_res = [_]dns.Resource{};
+    var empty_question = [_]dns.Question{};
     var packet = dns.Packet{
         .header = .{
             .id = 5189,
@@ -268,16 +282,10 @@ test "rdata serialization" {
             .z = 2,
             .answer_length = 1,
         },
-        .questions = &[_]dns.Question{},
-        .answers = &[_]dns.Resource{.{
-            .name = name,
-            .typ = .A,
-            .class = .IN,
-            .ttl = 300,
-            .opaque_rdata = .{ .data = opaque_rdata, .current_byte_count = 0 },
-        }},
-        .nameservers = &[_]dns.Resource{},
-        .additionals = &[_]dns.Resource{},
+        .questions = &empty_question,
+        .answers = &answers,
+        .nameservers = &empty_res,
+        .additionals = &empty_res,
     };
 
     var write_buffer: [1024]u8 = undefined;

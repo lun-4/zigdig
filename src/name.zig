@@ -319,7 +319,7 @@ pub const FullName = struct {
         for (self.labels) |label| {
             std.debug.assert(label.len < 255);
 
-            try writer.writeIntBig(u8, @intCast(u8, label.len));
+            try writer.writeIntBig(u8, @as(u8, @intCast(label.len)));
             size += 1;
 
             for (label) |byte| {

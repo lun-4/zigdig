@@ -63,7 +63,7 @@ pub const ResourceType = enum(u16) {
         const type_info = @typeInfo(Self).Enum;
         inline for (type_info.fields) |field| {
             if (std.mem.eql(u8, uppercased, field.name)) {
-                return @intToEnum(Self, field.value);
+                return @as(Self, @enumFromInt(field.value));
             }
         }
 
@@ -85,7 +85,7 @@ pub const ResourceType = enum(u16) {
     ///
     /// Returns amount of bytes written.
     pub fn writeTo(self: Self, writer: anytype) !usize {
-        try writer.writeIntBig(u16, @enumToInt(self));
+        try writer.writeIntBig(u16, @intFromEnum(self));
         return 16 / 8;
     }
 };
@@ -115,7 +115,7 @@ pub const ResourceClass = enum(u16) {
     ///
     /// Returns amount of bytes written.
     pub fn writeTo(self: @This(), writer: anytype) !usize {
-        try writer.writeIntBig(u16, @enumToInt(self));
+        try writer.writeIntBig(u16, @intFromEnum(self));
         return 16 / 8;
     }
 };

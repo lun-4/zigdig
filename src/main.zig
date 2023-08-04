@@ -16,7 +16,7 @@ fn logfn(
     comptime format: []const u8,
     args: anytype,
 ) void {
-    if (@enumToInt(message_level) <= @enumToInt(@import("root").current_log_level)) {
+    if (@intFromEnum(message_level) <= @intFromEnum(@import("root").current_log_level)) {
         std.log.defaultLog(message_level, scope, format, args);
     }
 }
@@ -52,6 +52,16 @@ pub fn main() !void {
     var name_buffer: [128][]const u8 = undefined;
     const name = try dns.Name.fromString(name_string, &name_buffer);
 
+    var questions = [_]dns.Question{
+        .{
+            .name = name,
+            .typ = qtype,
+            .class = .IN,
+        },
+    };
+
+    var empty = [0]dns.Resource{};
+
     // create question packet
     var packet = dns.Packet{
         .header = .{
@@ -60,16 +70,10 @@ pub fn main() !void {
             .wanted_recursion = true,
             .question_length = 1,
         },
-        .questions = &[_]dns.Question{
-            .{
-                .name = name,
-                .typ = qtype,
-                .class = .IN,
-            },
-        },
-        .answers = &[_]dns.Resource{},
-        .nameservers = &[_]dns.Resource{},
-        .additionals = &[_]dns.Resource{},
+        .questions = &questions,
+        .answers = &empty,
+        .nameservers = &empty,
+        .additionals = &empty,
     };
 
     logger.debug("packet: {}", .{packet});

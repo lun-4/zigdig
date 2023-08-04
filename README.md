@@ -79,6 +79,14 @@ pub fn main() !void {
     var name_buffer: [128][]const u8 = undefined;
     const name = try dns.Name.fromString("ziglang.org", &name_buffer);
 
+    var questions = [_]dns.Question{
+        .{
+            .name = name,
+            .typ = .A,
+            .class = .IN,
+        },
+    };
+
     var packet = dns.Packet{
         .header = .{
             .id = dns.helpers.randomHeaderId(),
@@ -86,13 +94,7 @@ pub fn main() !void {
             .wanted_recursion = true,
             .question_length = 1,
         },
-        .questions = &[_]dns.Question{
-            .{
-                .name = name,
-                .typ = .A,
-                .class = .IN,
-            },
-        },
+        .questions = &questions,
         .answers = &[_]dns.Resource{},
         .nameservers = &[_]dns.Resource{},
         .additionals = &[_]dns.Resource{},

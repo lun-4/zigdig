@@ -145,7 +145,7 @@ pub const Header = packed struct {
                 bool => try writer.writeBits(@as(u1, if (value) 1 else 0), 1),
                 u3 => try writer.writeBits(value, 3),
                 u4 => try writer.writeBits(value, 4),
-                OpCode, ResponseCode => try writer.writeBits(@enumToInt(value), 4),
+                OpCode, ResponseCode => try writer.writeBits(@intFromEnum(value), 4),
                 u16 => try writer.writeBits(value, 16),
                 else => @compileError(
                     "unsupported type on header " ++ @typeName(field.type),
@@ -260,7 +260,7 @@ pub const Resource = struct {
         try writer.writeIntBig(i32, self.ttl);
 
         const rdata_prefix_size = 16 / 8;
-        try writer.writeIntBig(u16, @intCast(u16, self.opaque_rdata.?.data.len));
+        try writer.writeIntBig(u16, @as(u16, @intCast(self.opaque_rdata.?.data.len)));
         const rdata_size = try writer.write(self.opaque_rdata.?.data);
 
         return name_size + typ_size + class_size + ttl_size +

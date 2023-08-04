@@ -15,7 +15,7 @@ fn logfn(
     comptime format: []const u8,
     args: anytype,
 ) void {
-    if (@enumToInt(message_level) <= @enumToInt(@import("root").current_log_level)) {
+    if (@intFromEnum(message_level) <= @intFromEnum(@import("root").current_log_level)) {
         std.log.defaultLog(message_level, scope, format, args);
     }
 }
