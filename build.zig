@@ -39,6 +39,7 @@ pub fn build(b: *Builder) void {
     if (option_libc) exe.linkLibC();
     b.installArtifact(exe_tinyhost);
 
+    _ = b.addModule("zigdig", .{ .source_file = .{ .path = "src/main.zig" } });
     var lib_tests = b.addTest(.{
         .root_source_file = .{ .path = "src/main.zig" },
         .optimize = optimize,
