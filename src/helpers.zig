@@ -244,6 +244,19 @@ pub fn parseFullPacket(
 
 const logger = std.log.scoped(.dns_helpers);
 
+/// Open a socket to the DNS resolver specified in input parameter
+pub fn connectToResolver(address: []const u8) !DNSConnection {
+    var addr = try std.net.Address.resolveIp(address, 53);
+
+    var flags: u32 = std.os.SOCK.DGRAM;
+    const fd = try std.os.socket(addr.any.family, flags, std.os.IPPROTO.UDP);
+
+    return DNSConnection{
+        .address = addr,
+        .socket = std.net.Stream{ .handle = fd },
+    };
+}
+
 /// Open a socket to a random DNS resolver declared in the systems'
 /// "/etc/resolv.conf" file.
 pub fn connectToSystemResolver() !DNSConnection {
