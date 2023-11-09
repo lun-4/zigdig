@@ -49,7 +49,6 @@ fn maybeReadResourceName(
 /// Common representations of DNS' Resource Data.
 pub const ResourceData = union(Type) {
     A: std.net.Address,
-    AAAA: std.net.Address,
 
     NS: ?dns.Name,
     MD: ?dns.Name,
@@ -83,7 +82,7 @@ pub const ResourceData = union(Type) {
     },
     MX: MXData,
     TXT: ?[]const u8,
-
+    AAAA: std.net.Address,
     SRV: SRVData,
     OPT: void, // EDNS0 is not implemented
 
