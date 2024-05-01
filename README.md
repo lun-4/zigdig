@@ -17,7 +17,7 @@ naive dns client library in zig
 
 ## how do
 
- - zig 0.11.0: https://ziglang.org
+ - zig 0.12.0: https://ziglang.org
  - have a `/etc/resolv.conf`
  - tested on linux, should work on bsd i think
 
