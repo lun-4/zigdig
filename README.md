@@ -2,6 +2,8 @@
 
 naive dns client library in zig
 
+help me decide if this api is good: https://github.com/lun-4/zigdig/issues/10
+
 ## what does it do
  - serialization and deserialization of dns packets as per rfc1035
  - supports a subset of rdata (A and AAAA are there, so, for most cases, this
