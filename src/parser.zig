@@ -66,7 +66,7 @@ pub const ResourceDataHolder = struct {
         allocator: std.mem.Allocator,
         reader: anytype,
     ) !dns.ResourceData.Opaque {
-        var opaque_rdata = try allocator.alloc(u8, self.size);
+        const opaque_rdata = try allocator.alloc(u8, self.size);
         const read_bytes = try reader.read(opaque_rdata);
         std.debug.assert(read_bytes == opaque_rdata.len);
         return .{
@@ -171,7 +171,7 @@ pub fn Parser(comptime ReaderType: type) type {
             ctx: *ParserContext,
             options: ParserOptions,
         ) Self {
-            var self = Self{
+            const self = Self{
                 .wrapper_reader = WrapperR{
                     .underlying_reader = incoming_reader,
                     .ctx = ctx,
@@ -227,7 +227,7 @@ pub fn Parser(comptime ReaderType: type) type {
                     }
                 },
                 .answer, .nameserver, .additional => {
-                    var count_holder = (switch (self.state) {
+                    const count_holder = (switch (self.state) {
                         .answer => &self.ctx.current_counts.answer,
                         .nameserver => &self.ctx.current_counts.nameserver,
                         .additional => &self.ctx.current_counts.additional,
@@ -306,9 +306,9 @@ pub fn Parser(comptime ReaderType: type) type {
                         else => unreachable,
                     };
 
-                    const rdata_length = try reader.readIntBig(u16);
+                    const rdata_length = try reader.readInt(u16, .big);
                     const rdata_index = reader.context.ctx.current_byte_count;
-                    var rdata = ResourceDataHolder{
+                    const rdata = ResourceDataHolder{
                         .size = rdata_length,
                         .current_byte_index = rdata_index,
                     };

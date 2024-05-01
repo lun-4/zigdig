@@ -1,8 +1,8 @@
 const std = @import("std");
 const fmt = std.fmt;
 
-const dns = @import("./lib.zig");
-const pkt = @import("./packet.zig");
+const dns = @import("lib.zig");
+const pkt = @import("packet.zig");
 const Type = dns.ResourceType;
 
 const logger = std.log.scoped(.dns_rdata);
@@ -37,7 +37,7 @@ fn maybeReadResourceName(
         .none => null,
         .raw => |allocator| try dns.Name.readFrom(reader, .{ .allocator = allocator }),
         .full => |name_pool| blk: {
-            var name = try dns.Name.readFrom(
+            const name = try dns.Name.readFrom(
                 reader,
                 .{ .allocator = name_pool.allocator },
             );
@@ -150,7 +150,7 @@ pub const ResourceData = union(Type) {
     pub fn writeTo(self: Self, writer: anytype) !usize {
         return switch (self) {
             .A => |addr| blk: {
-                try writer.writeIntBig(u32, addr.in.sa.addr);
+                try writer.writeInt(u32, addr.in.sa.addr, .big);
                 break :blk @sizeOf(@TypeOf(addr.in.sa.addr));
             },
             .AAAA => |addr| try writer.write(&addr.in6.sa.addr),
@@ -161,25 +161,25 @@ pub const ResourceData = union(Type) {
                 const mname_size = try soa_data.mname.?.writeTo(writer);
                 const rname_size = try soa_data.rname.?.writeTo(writer);
 
-                try writer.writeIntBig(u32, soa_data.serial);
-                try writer.writeIntBig(u32, soa_data.refresh);
-                try writer.writeIntBig(u32, soa_data.retry);
-                try writer.writeIntBig(u32, soa_data.expire);
-                try writer.writeIntBig(u32, soa_data.minimum);
+                try writer.writeInt(u32, soa_data.serial, .big);
+                try writer.writeInt(u32, soa_data.refresh, .big);
+                try writer.writeInt(u32, soa_data.retry, .big);
+                try writer.writeInt(u32, soa_data.expire, .big);
+                try writer.writeInt(u32, soa_data.minimum, .big);
 
                 break :blk mname_size + rname_size + (5 * @sizeOf(u32));
             },
 
             .MX => |mxdata| blk: {
-                try writer.writeIntBig(u16, mxdata.preference);
+                try writer.writeInt(u16, mxdata.preference, .big);
                 const exchange_size = try mxdata.exchange.?.writeTo(writer);
                 break :blk @sizeOf(@TypeOf(mxdata.preference)) + exchange_size;
             },
 
             .SRV => |srv| {
-                try writer.writeIntBig(u16, srv.priority);
-                try writer.writeIntBig(u16, srv.weight);
-                try writer.writeIntBig(u16, srv.port);
+                try writer.writeInt(u16, srv.priority, .big);
+                try writer.writeInt(u16, srv.weight, .big);
+                try writer.writeInt(u16, srv.port, .big);
 
                 const target_size = try srv.target.?.writeTo(writer);
                 return target_size + (3 * @sizeOf(u16));
@@ -231,7 +231,7 @@ pub const ResourceData = union(Type) {
     ) !ResourceData {
         const BufferT = std.io.FixedBufferStream([]const u8);
         var stream = BufferT{ .buffer = opaque_resource_data.data, .pos = 0 };
-        var underlying_reader = stream.reader();
+        const underlying_reader = stream.reader();
 
         // important to keep track of that rdata's position in the packet
         // as rdata could point to other rdata.
@@ -271,20 +271,20 @@ pub const ResourceData = union(Type) {
             .MX => blk: {
                 break :blk ResourceData{
                     .MX = MXData{
-                        .preference = try reader.readIntBig(u16),
+                        .preference = try reader.readInt(u16, .big),
                         .exchange = try maybeReadResourceName(reader, options),
                     },
                 };
             },
 
             .SOA => blk: {
-                var mname = try maybeReadResourceName(reader, options);
-                var rname = try maybeReadResourceName(reader, options);
-                var serial = try reader.readIntBig(u32);
-                var refresh = try reader.readIntBig(u32);
-                var retry = try reader.readIntBig(u32);
-                var expire = try reader.readIntBig(u32);
-                var minimum = try reader.readIntBig(u32);
+                const mname = try maybeReadResourceName(reader, options);
+                const rname = try maybeReadResourceName(reader, options);
+                const serial = try reader.readInt(u32, .big);
+                const refresh = try reader.readInt(u32, .big);
+                const retry = try reader.readInt(u32, .big);
+                const expire = try reader.readInt(u32, .big);
+                const minimum = try reader.readInt(u32, .big);
 
                 break :blk ResourceData{
                     .SOA = SOAData{
@@ -299,9 +299,9 @@ pub const ResourceData = union(Type) {
                 };
             },
             .SRV => blk: {
-                const priority = try reader.readIntBig(u16);
-                const weight = try reader.readIntBig(u16);
-                const port = try reader.readIntBig(u16);
+                const priority = try reader.readInt(u16, .big);
+                const weight = try reader.readInt(u16, .big);
+                const port = try reader.readInt(u16, .big);
                 const target = try maybeReadResourceName(reader, options);
                 break :blk ResourceData{
                     .SRV = .{
@@ -313,11 +313,11 @@ pub const ResourceData = union(Type) {
                 };
             },
             .TXT => blk: {
-                const length = try reader.readIntBig(u8);
+                const length = try reader.readInt(u8, .big);
                 if (length > 256) return error.Overflow;
 
                 if (options.allocator) |allocator| {
-                    var text = try allocator.alloc(u8, length);
+                    const text = try allocator.alloc(u8, length);
                     _ = try reader.read(text);
 
                     break :blk ResourceData{ .TXT = text };

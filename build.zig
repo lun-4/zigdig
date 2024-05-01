@@ -1,21 +1,8 @@
-const Builder = std.build.Builder;
 const std = @import("std");
+const Builder = std.Build;
 pub fn build(b: *Builder) void {
-    const native_opt = b.option(bool, "native", "if other people exist, turn this off");
     const option_libc = (b.option(bool, "libc", "build with libc?")) orelse false;
-    const is_native = native_opt orelse true;
-
-    var target: std.zig.CrossTarget = undefined;
-    if (is_native) {
-        target = b.standardTargetOptions(.{});
-    } else {
-        // my friends amd cpu is an fx 6300 and it kind of didnt work so
-        target = b.standardTargetOptions(.{
-            .default_target = .{
-                .cpu_model = .{ .explicit = &std.Target.x86.cpu.athlon_fx },
-            },
-        });
-    }
+    const target = b.standardTargetOptions(.{});
 
     const optimize = b.standardOptimizeOption(.{});
 
@@ -39,7 +26,7 @@ pub fn build(b: *Builder) void {
     if (option_libc) exe.linkLibC();
     b.installArtifact(exe_tinyhost);
 
-    _ = b.addModule("zigdig", .{ .source_file = .{ .path = "src/main.zig" } });
+    _ = b.addModule("zigdig", .{ .root_source_file = .{ .path = "src/main.zig" } });
     var lib_tests = b.addTest(.{
         .root_source_file = .{ .path = "src/main.zig" },
         .optimize = optimize,
@@ -55,6 +42,6 @@ pub fn build(b: *Builder) void {
     run_step.dependOn(&run_cmd.step);
 
     _ = b.addModule("dns", .{
-        .source_file = .{ .path = "src/lib.zig" },
+        .root_source_file = .{ .path = "src/lib.zig" },
     });
 }

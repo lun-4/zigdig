@@ -9,7 +9,7 @@ const Packet = dns.Packet;
 test "convert domain string to dns name" {
     const domain = "www.google.com";
     var name_buffer: [3][]const u8 = undefined;
-    var name = (try dns.Name.fromString(domain[0..], &name_buffer)).full;
+    const name = (try dns.Name.fromString(domain[0..], &name_buffer)).full;
     std.debug.assert(name.labels.len == 3);
     try std.testing.expect(std.mem.eql(u8, name.labels[0], "www"));
     try std.testing.expect(std.mem.eql(u8, name.labels[1], "google"));
@@ -32,7 +32,7 @@ const GOOGLE_COM_LABELS = [_][]const u8{ "google"[0..], "com"[0..] };
 
 test "Packet serialize/deserialize" {
     const random_id = dns.helpers.randomHeaderId();
-    var packet = dns.Packet{
+    const packet = dns.Packet{
         .header = .{ .id = random_id },
         .questions = &[_]dns.Question{},
         .answers = &[_]dns.Resource{},
@@ -54,8 +54,8 @@ test "Packet serialize/deserialize" {
 
     const fields = [_][]const u8{ "id", "opcode", "question_length", "answer_length" };
 
-    var new_header = deserialized.header;
-    var header = packet.header;
+    const new_header = deserialized.header;
+    const header = packet.header;
 
     inline for (fields) |field| {
         try std.testing.expectEqual(
@@ -80,7 +80,7 @@ fn expectGoogleLabels(actual: [][]const u8) !void {
 test "deserialization of original question google.com/A" {
     var write_buffer: [0x10000]u8 = undefined;
 
-    var decoded = try decodeBase64(TEST_PKT_QUERY, &write_buffer);
+    const decoded = try decodeBase64(TEST_PKT_QUERY, &write_buffer);
 
     var incoming = try deserialTest(decoded);
     defer incoming.deinit(.{});
@@ -103,7 +103,7 @@ test "deserialization of original question google.com/A" {
 
 test "deserialization of reply google.com/A" {
     var encode_buffer: [0x10000]u8 = undefined;
-    var decoded = try decodeBase64(TEST_PKT_RESPONSE, &encode_buffer);
+    const decoded = try decodeBase64(TEST_PKT_RESPONSE, &encode_buffer);
 
     var incoming = try deserialTest(decoded);
     defer incoming.deinit(.{});
@@ -115,13 +115,13 @@ test "deserialization of reply google.com/A" {
     try std.testing.expectEqual(@as(u16, 0), pkt.header.nameserver_length);
     try std.testing.expectEqual(@as(u16, 0), pkt.header.additional_length);
 
-    var question = pkt.questions[0];
+    const question = pkt.questions[0];
 
     try expectGoogleLabels(question.name.?.full.labels);
     try testing.expectEqual(dns.ResourceType.A, question.typ);
     try testing.expectEqual(dns.ResourceClass.IN, question.class);
 
-    var answer = pkt.answers[0];
+    const answer = pkt.answers[0];
 
     try expectGoogleLabels(answer.name.?.full.labels);
     try testing.expectEqual(dns.ResourceType.A, answer.typ);
@@ -147,19 +147,19 @@ test "deserialization of reply google.com/A" {
 }
 
 fn encodeBase64(buffer: []u8, source: []const u8) []const u8 {
-    var encoded = buffer[0..std.base64.standard.Encoder.calcSize(source.len)];
+    const encoded = buffer[0..std.base64.standard.Encoder.calcSize(source.len)];
     return std.base64.standard.Encoder.encode(encoded, source);
 }
 
 fn encodePacket(pkt: Packet, encode_buffer: []u8, write_buffer: []u8) ![]const u8 {
-    var out = try serialTest(pkt, write_buffer);
+    const out = try serialTest(pkt, write_buffer);
     return encodeBase64(encode_buffer, out);
 }
 
 test "serialization of google.com/A (question)" {
     const domain = "google.com";
     var name_buffer: [2][]const u8 = undefined;
-    var name = try dns.Name.fromString(domain[0..], &name_buffer);
+    const name = try dns.Name.fromString(domain[0..], &name_buffer);
 
     var questions = [_]dns.Question{.{
         .name = name,
@@ -169,7 +169,7 @@ test "serialization of google.com/A (question)" {
 
     var empty = [0]dns.Resource{};
 
-    var packet = dns.Packet{
+    const packet = dns.Packet{
         .header = .{
             .id = 5189,
             .wanted_recursion = true,
@@ -184,7 +184,7 @@ test "serialization of google.com/A (question)" {
 
     var encode_buffer: [256]u8 = undefined;
     var write_buffer: [256]u8 = undefined;
-    var encoded = try encodePacket(packet, &encode_buffer, &write_buffer);
+    const encoded = try encodePacket(packet, &encode_buffer, &write_buffer);
     try std.testing.expectEqualSlices(u8, TEST_PKT_QUERY, encoded);
 }
 
@@ -210,7 +210,7 @@ fn deserialTest(packet_data: []const u8) !dns.IncomingPacket {
 }
 
 test "convert string to dns type" {
-    var parsed = try dns.ResourceType.fromString("AAAA");
+    const parsed = try dns.ResourceType.fromString("AAAA");
     try std.testing.expectEqual(dns.ResourceType.AAAA, parsed);
 }
 
@@ -255,7 +255,7 @@ const PACKET_WITH_RDATA = "FEUBIAAAAAEAAAAABmdvb2dsZQNjb20AAAEAAQAAASwABAEAAH8="
 
 test "rdata serialization" {
     var name_buffer: [2][]const u8 = undefined;
-    var name = try dns.Name.fromString("google.com", &name_buffer);
+    const name = try dns.Name.fromString("google.com", &name_buffer);
     var resource_data = dns.ResourceData{
         .A = try std.net.Address.parseIp4("127.0.0.1", 0),
     };
@@ -275,7 +275,7 @@ test "rdata serialization" {
 
     var empty_res = [_]dns.Resource{};
     var empty_question = [_]dns.Question{};
-    var packet = dns.Packet{
+    const packet = dns.Packet{
         .header = .{
             .id = 5189,
             .wanted_recursion = true,

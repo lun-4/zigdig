@@ -1,5 +1,5 @@
 const std = @import("std");
-const dns = @import("./lib.zig");
+const dns = @import("lib.zig");
 
 const Name = dns.Name;
 const ResourceType = dns.ResourceType;
@@ -109,7 +109,7 @@ pub const Header = packed struct {
 
         // turn incoming reader into a bitReader so that we can extract
         // non-u8-aligned data from it
-        var reader = std.io.bitReader(.Big, byte_reader);
+        var reader = std.io.bitReader(.big, byte_reader);
 
         const fields = @typeInfo(Self).Struct.fields;
         inline for (fields) |field| {
@@ -122,7 +122,7 @@ pub const Header = packed struct {
                     const tag_int = try reader.readBits(u4, 4, &out_bits);
                     break :blk try std.meta.intToEnum(field.type, tag_int);
                 },
-                u16 => try byte_reader.readIntBig(field.type),
+                u16 => try byte_reader.readInt(field.type, .big),
                 else => @compileError(
                     "unsupported type on header " ++ @typeName(field.type),
                 ),
@@ -133,7 +133,7 @@ pub const Header = packed struct {
 
     /// Write the network representation of a header to the given writer.
     pub fn writeTo(self: Self, byte_writer: anytype) !usize {
-        var writer = std.io.bitWriter(.Big, byte_writer);
+        var writer = std.io.bitWriter(.big, byte_writer);
 
         var written_bits: usize = 0;
 
@@ -177,9 +177,9 @@ pub const Question = struct {
             .{reader.context.ctx.current_byte_count},
         );
 
-        var name = try Name.readFrom(reader, options);
-        var qtype = try reader.readEnum(ResourceType, .Big);
-        var qclass = try ResourceClass.readFrom(reader);
+        const name = try Name.readFrom(reader, options);
+        const qtype = try reader.readEnum(ResourceType, .big);
+        const qclass = try ResourceClass.readFrom(reader);
 
         return Self{
             .name = name,
@@ -216,10 +216,10 @@ pub const Resource = struct {
         options: dns.ParserOptions,
     ) !?dns.ResourceData.Opaque {
         if (options.allocator) |allocator| {
-            const rdata_length = try reader.readIntBig(u16);
+            const rdata_length = try reader.readInt(u16, .big);
             const rdata_index = reader.context.ctx.current_byte_count;
 
-            var opaque_rdata = try allocator.alloc(u8, rdata_length);
+            const opaque_rdata = try allocator.alloc(u8, rdata_length);
             const read_bytes = try reader.read(opaque_rdata);
             std.debug.assert(read_bytes == opaque_rdata.len);
             return .{
@@ -237,11 +237,11 @@ pub const Resource = struct {
             "reading resource at {d} bytes",
             .{reader.context.ctx.current_byte_count},
         );
-        var name = try Name.readFrom(reader, options);
-        var typ = try ResourceType.readFrom(reader);
-        var class = try ResourceClass.readFrom(reader);
-        var ttl = try reader.readIntBig(i32);
-        var opaque_rdata = try Self.readResourceDataFrom(reader, options);
+        const name = try Name.readFrom(reader, options);
+        const typ = try ResourceType.readFrom(reader);
+        const class = try ResourceClass.readFrom(reader);
+        const ttl = try reader.readInt(i32, .big);
+        const opaque_rdata = try Self.readResourceDataFrom(reader, options);
 
         return Self{
             .name = name,
@@ -257,10 +257,10 @@ pub const Resource = struct {
         const typ_size = try self.typ.writeTo(writer);
         const class_size = try self.class.writeTo(writer);
         const ttl_size = 32 / 8;
-        try writer.writeIntBig(i32, self.ttl);
+        try writer.writeInt(i32, self.ttl, .big);
 
         const rdata_prefix_size = 16 / 8;
-        try writer.writeIntBig(u16, @as(u16, @intCast(self.opaque_rdata.?.data.len)));
+        try writer.writeInt(u16, @as(u16, @intCast(self.opaque_rdata.?.data.len)), .big);
         const rdata_size = try writer.write(self.opaque_rdata.?.data);
 
         return name_size + typ_size + class_size + ttl_size +

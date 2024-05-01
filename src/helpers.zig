@@ -126,14 +126,14 @@ pub const DNSConnection = struct {
 
         const written_bytes = try packet.writeTo(stream.writer());
 
-        var result = buffer[0..written_bytes];
+        const result = buffer[0..written_bytes];
         const dest_len: u32 = switch (self.address.any.family) {
-            std.os.AF.INET => @sizeOf(std.os.sockaddr.in),
-            std.os.AF.INET6 => @sizeOf(std.os.sockaddr.in6),
+            std.posix.AF.INET => @sizeOf(std.posix.sockaddr.in),
+            std.posix.AF.INET6 => @sizeOf(std.posix.sockaddr.in6),
             else => unreachable,
         };
 
-        _ = try std.os.sendto(
+        _ = try std.posix.sendto(
             self.socket.handle,
             result,
             0,
@@ -181,11 +181,11 @@ pub fn parseFullPacket(
     allocator: std.mem.Allocator,
     parse_full_packet_options: ParseFullPacketOptions,
 ) !dns.IncomingPacket {
-    var parser_options = dns.ParserOptions{ .allocator = allocator };
+    const parser_options = dns.ParserOptions{ .allocator = allocator };
 
     var packet = try allocator.create(dns.Packet);
     errdefer allocator.destroy(packet);
-    var incoming_packet = dns.IncomingPacket{
+    const incoming_packet = dns.IncomingPacket{
         .allocator = allocator,
         .packet = packet,
     };
@@ -217,14 +217,14 @@ pub fn parseFullPacket(
         switch (part) {
             .header => |header| packet.header = header,
             .question => |question_with_raw_names| {
-                var question =
+                const question =
                     try name_pool.transmuteResource(question_with_raw_names);
                 try questions.append(question);
             },
             .end_question => packet.questions = try questions.toOwnedSlice(),
             .answer, .nameserver, .additional => |raw_resource| {
                 // since we give it an allocator, we don't receive rdata frames
-                var resource = try name_pool.transmuteResource(raw_resource);
+                const resource = try name_pool.transmuteResource(raw_resource);
                 try (switch (part) {
                     .answer => answers,
                     .nameserver => nameservers,
@@ -246,9 +246,9 @@ const logger = std.log.scoped(.dns_helpers);
 
 /// Open a socket to the DNS resolver specified in input parameter
 pub fn connectToResolver(address: []const u8) !DNSConnection {
-    var addr = try std.net.Address.resolveIp(address, 53);
+    const addr = try std.net.Address.resolveIp(address, 53);
 
-    var flags: u32 = std.os.SOCK.DGRAM;
+    const flags: u32 = std.os.SOCK.DGRAM;
     const fd = try std.os.socket(addr.any.family, flags, std.os.IPPROTO.UDP);
 
     return DNSConnection{
@@ -263,10 +263,10 @@ pub fn connectToSystemResolver() !DNSConnection {
     var out_buffer: [256]u8 = undefined;
     const nameserver_address_string = (try randomNameserver(&out_buffer)).?;
 
-    var addr = try std.net.Address.resolveIp(nameserver_address_string, 53);
+    const addr = try std.net.Address.resolveIp(nameserver_address_string, 53);
 
-    var flags: u32 = std.os.SOCK.DGRAM;
-    const fd = try std.os.socket(addr.any.family, flags, std.os.IPPROTO.UDP);
+    const flags: u32 = std.posix.SOCK.DGRAM;
+    const fd = try std.posix.socket(addr.any.family, flags, std.posix.IPPROTO.UDP);
 
     return DNSConnection{
         .address = addr,
@@ -320,7 +320,7 @@ pub fn randomNameserver(output_buffer: []u8) !?[]const u8 {
             if (current_nameserver == selected) {
                 const nameserver_addr = ns_it.next().?;
 
-                std.mem.copy(u8, output_buffer, nameserver_addr);
+                @memcpy(output_buffer, nameserver_addr);
                 return output_buffer[0..nameserver_addr.len];
             }
 
@@ -404,7 +404,7 @@ pub fn receiveTrustedAddresses(
                 // TODO parser.reader()?
                 var reader = parser.wrapper_reader.reader();
                 defer current_resource = null;
-                var maybe_addr = switch (current_resource.?.typ) {
+                const maybe_addr = switch (current_resource.?.typ) {
                     .A => blk: {
                         var ip4addr: [4]u8 = undefined;
                         _ = try reader.read(&ip4addr);
@@ -443,7 +443,7 @@ fn fetchTrustedAddresses(
         },
     };
 
-    var packet = dns.Packet{
+    const packet = dns.Packet{
         .header = .{
             .id = dns.helpers.randomHeaderId(),
             .is_response = false,
@@ -479,11 +479,11 @@ pub fn getAddressList(incoming_name: []const u8, allocator: std.mem.Allocator) !
     var final_list = std.ArrayList(std.net.Address).init(allocator);
     defer final_list.deinit();
 
-    var addrs_v4 = try fetchTrustedAddresses(allocator, name, .A);
+    const addrs_v4 = try fetchTrustedAddresses(allocator, name, .A);
     defer allocator.free(addrs_v4);
     for (addrs_v4) |addr| try final_list.append(addr);
 
-    var addrs_v6 = try fetchTrustedAddresses(allocator, name, .AAAA);
+    const addrs_v6 = try fetchTrustedAddresses(allocator, name, .AAAA);
     defer allocator.free(addrs_v6);
     for (addrs_v6) |addr| try final_list.append(addr);
 

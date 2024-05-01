@@ -98,7 +98,7 @@ pub const Name = union(enum) {
                 if (name_index > options.max_label_size)
                     return error.Overflow;
 
-                var maybe_component = try Self.readLabelComponent(reader, null);
+                const maybe_component = try Self.readLabelComponent(reader, null);
                 if (maybe_component) |component| switch (component) {
                     .Null, .Pointer => break,
                     else => {},
@@ -137,18 +137,18 @@ pub const Name = union(enum) {
             "reading label component at {d} bytes",
             .{reader.context.ctx.current_byte_count},
         );
-        var possible_length = try reader.readIntBig(u8);
+        const possible_length = try reader.readInt(u8, .big);
         if (possible_length == 0) return LabelComponent{ .Null = {} };
 
         // RFC1035:
         // since the label must begin with two zero bits because
         // labels are restricted to 63 octets or less.
 
-        var bit1 = (possible_length & (1 << 7)) != 0;
-        var bit2 = (possible_length & (1 << 6)) != 0;
+        const bit1 = (possible_length & (1 << 7)) != 0;
+        const bit2 = (possible_length & (1 << 6)) != 0;
 
         if (bit1 and bit2) {
-            const second_offset_component = try reader.readIntBig(u8);
+            const second_offset_component = try reader.readInt(u8, .big);
 
             // merge them together
             var offset: u16 = (possible_length << 7) | second_offset_component;
@@ -165,7 +165,7 @@ pub const Name = union(enum) {
 
             // the next <possible_length> bytes contain a full label.
             if (maybe_allocator) |allocator| {
-                var label = try allocator.alloc(u8, possible_length);
+                const label = try allocator.alloc(u8, possible_length);
                 const read_bytes = try reader.read(label);
                 if (read_bytes != label.len) logger.err(
                     "possible_length = {d} read_bytes = {d} label.len = {d}",
@@ -319,7 +319,7 @@ pub const FullName = struct {
         for (self.labels) |label| {
             std.debug.assert(label.len < 255);
 
-            try writer.writeIntBig(u8, @as(u8, @intCast(label.len)));
+            try writer.writeInt(u8, @as(u8, @intCast(label.len)), .big);
             size += 1;
 
             for (label) |byte| {

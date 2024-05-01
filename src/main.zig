@@ -22,7 +22,7 @@ fn logfn(
 }
 
 pub fn main() !void {
-    if (std.mem.eql(u8, std.os.getenv("DEBUG") orelse "", "1")) current_log_level = .debug;
+    if (std.mem.eql(u8, std.posix.getenv("DEBUG") orelse "", "1")) current_log_level = .debug;
     var gpa = std.heap.GeneralPurposeAllocator(.{}){};
     defer {
         _ = gpa.deinit();
