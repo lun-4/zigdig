@@ -320,7 +320,7 @@ pub fn randomNameserver(output_buffer: []u8) !?[]const u8 {
             if (current_nameserver == selected) {
                 const nameserver_addr = ns_it.next().?;
 
-                @memcpy(output_buffer, nameserver_addr);
+                @memcpy(output_buffer[0..nameserver_addr.len], nameserver_addr);
                 return output_buffer[0..nameserver_addr.len];
             }
 
