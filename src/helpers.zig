@@ -248,8 +248,8 @@ const logger = std.log.scoped(.dns_helpers);
 pub fn connectToResolver(address: []const u8) !DNSConnection {
     const addr = try std.net.Address.resolveIp(address, 53);
 
-    const flags: u32 = std.os.SOCK.DGRAM;
-    const fd = try std.os.socket(addr.any.family, flags, std.os.IPPROTO.UDP);
+    const flags: u32 = std.posix.SOCK.DGRAM;
+    const fd = try std.posix.socket(addr.any.family, flags, std.posix.IPPROTO.UDP);
 
     return DNSConnection{
         .address = addr,
@@ -263,15 +263,7 @@ pub fn connectToSystemResolver() !DNSConnection {
     var out_buffer: [256]u8 = undefined;
     const nameserver_address_string = (try randomNameserver(&out_buffer)).?;
 
-    const addr = try std.net.Address.resolveIp(nameserver_address_string, 53);
-
-    const flags: u32 = std.posix.SOCK.DGRAM;
-    const fd = try std.posix.socket(addr.any.family, flags, std.posix.IPPROTO.UDP);
-
-    return DNSConnection{
-        .address = addr,
-        .socket = std.net.Stream{ .handle = fd },
-    };
+    return connectToResolver(nameserver_address_string);
 }
 
 pub fn randomNameserver(output_buffer: []u8) !?[]const u8 {
