@@ -6,8 +6,8 @@ help me decide if this api is good: https://github.com/lun-4/zigdig/issues/10
 
 ## what does it do
  - serialization and deserialization of dns packets as per rfc1035
- - supports a subset of rdata (A and AAAA are there, so, for most cases, this
- will be enough)
+ - supports a subset of rdata (i do not have any plans to support 100% of DNS, but SRV/MX/TXT/A/AAAA
+  are there, which most likely will be enough for your use cases)
  - has helpers for reading `/etc/resolv.conf` (not that much, really)
 
 ## what does it not do
