@@ -10,7 +10,7 @@ pub fn build(b: *Builder) void {
 
     const exe = b.addExecutable(.{
         .name = "zigdig",
-        .root_source_file = .{ .path = "src/main.zig" },
+        .root_source_file = b.path("src/main.zig"),
         .target = target,
         .optimize = optimize,
     });
@@ -19,16 +19,16 @@ pub fn build(b: *Builder) void {
 
     const exe_tinyhost = b.addExecutable(.{
         .name = "zigdig-tiny",
-        .root_source_file = .{ .path = "src/main_tinyhost.zig" },
+        .root_source_file = b.path("src/main_tinyhost.zig"),
         .target = target,
         .optimize = optimize,
     });
     if (option_libc) exe.linkLibC();
     b.installArtifact(exe_tinyhost);
 
-    _ = b.addModule("zigdig", .{ .root_source_file = .{ .path = "src/main.zig" } });
+    _ = b.addModule("zigdig", .{ .root_source_file = b.path("src/main.zig") });
     var lib_tests = b.addTest(.{
-        .root_source_file = .{ .path = "src/main.zig" },
+        .root_source_file = b.path("src/main.zig"),
         .optimize = optimize,
     });
 
@@ -42,6 +42,6 @@ pub fn build(b: *Builder) void {
     run_step.dependOn(&run_cmd.step);
 
     _ = b.addModule("dns", .{
-        .root_source_file = .{ .path = "src/lib.zig" },
+        .root_source_file = b.path("src/lib.zig"),
     });
 }
