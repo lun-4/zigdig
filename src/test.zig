@@ -5,12 +5,13 @@ const io = std.io;
 
 const dns = @import("lib.zig");
 const Packet = dns.Packet;
+const assert = std.debug.assert;
 
 test "convert domain string to dns name" {
     const domain = "www.google.com";
     var name_buffer: [3][]const u8 = undefined;
     const name = (try dns.Name.fromString(domain[0..], &name_buffer)).full;
-    std.debug.assert(name.labels.len == 3);
+    assert(name.labels.len == 3);
     try std.testing.expect(std.mem.eql(u8, name.labels[0], "www"));
     try std.testing.expect(std.mem.eql(u8, name.labels[1], "google"));
     try std.testing.expect(std.mem.eql(u8, name.labels[2], "com"));
@@ -294,4 +295,75 @@ test "rdata serialization" {
     var encode_buffer: [1024]u8 = undefined;
     const encoded_result = encodeBase64(&encode_buffer, serialized_result);
     try std.testing.expectEqualStrings(PACKET_WITH_RDATA, encoded_result);
+}
+
+// We can wireshark/tcpdump capture the UDP packet request for dns resolution of the reverse address
+// sudo tcpdump -i lo (this is on loopback for testing with resol.conf set to 127.0.0.53)
+// Debugging commands:
+// dig -x 8.8.4.4 +trace (trace lookup from dig)
+// sudo tcpdump -i any udp port 53 (capture udp traffic for DNS queries)
+
+test "reverse address lookup" {
+    const id = 4100; // Arbitrary int
+    // const name = "dns.google.";
+    const ip_address = "8.8.4.4";
+
+    const allocator: std.mem.Allocator = std.heap.page_allocator;
+    // Reversed arpa compatible address for Classless IN-ADDR.ARPA delegation
+    var address = dns.IpAddress{ .address = .{ .address = ip_address }, .allocator = allocator };
+    const arpa_address = try address.reverseIpv4();
+
+    var labels: [6][]const u8 = undefined;
+    const apra_address_dns_name = try dns.Name.fromString(arpa_address, &labels);
+
+    var name_pool = dns.NamePool.init(allocator);
+    defer name_pool.deinitWithNames();
+
+    var question = [_]dns.Question{.{
+        .class = .IN,
+        .typ = .PTR,
+        .name = apra_address_dns_name,
+    }};
+
+    var empty = [_]dns.Resource{};
+
+    const packet = dns.Packet{
+        .header = .{
+            .id = id,
+            .wanted_recursion = true, // Need recursion of at least 1 depth for reverse lookup
+            .answer_length = 0, // 0 for reverse query
+            .question_length = 1,
+            .nameserver_length = 0,
+            .additional_length = 0,
+            .opcode = .Query,
+        },
+        .questions = &question,
+        .answers = &empty,
+        .nameservers = &empty,
+        .additionals = &[_]dns.Resource{},
+    };
+
+    const conn = try dns.helpers.connectToSystemResolver();
+    defer conn.close();
+
+    try conn.sendPacket(packet);
+    const stdout = std.io.getStdOut();
+
+    // For debugging
+    // try dns.helpers.printAsZoneFile(&packet, undefined, stdout.writer());
+
+    const reply = try conn.receiveFullPacket(
+        allocator,
+        4096,
+        .{ .name_pool = &name_pool },
+    );
+    defer reply.deinit(.{ .names = false });
+
+    // For debugging
+    const reply_packet = reply.packet;
+    try dns.helpers.printAsZoneFile(reply_packet, &name_pool, stdout.writer());
+
+    std.debug.print("{d}", .{reply_packet.answers.len});
+    assert(reply_packet.answers.len > 0);
+    std.debug.print("{s}", .{reply_packet.answers[0].opaque_rdata.?.data});
 }

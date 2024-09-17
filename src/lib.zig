@@ -8,6 +8,10 @@ pub const Name = names.Name;
 pub const LabelComponent = names.LabelComponent;
 pub const NamePool = names.NamePool;
 
+pub const address = @import("address.zig");
+pub const IpAddress = address.IpAddress;
+pub const IpAdressMeta = address.AddressMeta;
+
 const pkt = @import("packet.zig");
 pub const Packet = pkt.Packet;
 pub const ResponseCode = pkt.ResponseCode;
