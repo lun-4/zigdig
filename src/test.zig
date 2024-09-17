@@ -305,7 +305,7 @@ test "rdata serialization" {
 
 test "reverse address lookup" {
     const id = 4100; // Arbitrary int
-    // const name = "dns.google.";
+    const name = "dns.google.";
     const ip_address = "8.8.4.4";
 
     const allocator: std.mem.Allocator = std.heap.page_allocator;
@@ -347,23 +347,40 @@ test "reverse address lookup" {
     defer conn.close();
 
     try conn.sendPacket(packet);
-    const stdout = std.io.getStdOut();
+    // const stdout = std.io.getStdOut();
 
     // For debugging
     // try dns.helpers.printAsZoneFile(&packet, undefined, stdout.writer());
 
     const reply = try conn.receiveFullPacket(
         allocator,
-        4096,
+        4096, // Max PRT query DNS packets are usually 104 bytes. This could be much smaller
         .{ .name_pool = &name_pool },
     );
     defer reply.deinit(.{ .names = false });
 
     // For debugging
     const reply_packet = reply.packet;
-    try dns.helpers.printAsZoneFile(reply_packet, &name_pool, stdout.writer());
+    // try dns.helpers.printAsZoneFile(reply_packet, &name_pool, stdout.writer());
 
-    std.debug.print("{d}", .{reply_packet.answers.len});
+    // std.debug.print("{d}\n", .{reply_packet.answers.len});
+    // Obviously change this
+    const resource = reply_packet.answers[0];
+
+    const resource_data = try dns.ResourceData.fromOpaque(
+        resource.typ,
+        resource.opaque_rdata.?,
+        .{
+            .name_provider = .{ .full = &name_pool },
+            .allocator = name_pool.allocator,
+        },
+    );
+
+    //fromOpaque read the data, so if we utilize any standard reader/writer we have access to the []const u8 opaque data value. So we just allocprint here
+    const dns_name = try std.fmt.allocPrint(allocator, "{s}", .{resource_data});
+    std.debug.print("{s}\n", .{dns_name});
+
+    assert(std.mem.eql(u8, dns_name, name));
     assert(reply_packet.answers.len > 0);
-    std.debug.print("{s}", .{reply_packet.answers[0].opaque_rdata.?.data});
+    // std.debug.print("{s}\n", .{reply_packet.answers[0].opaque_rdata.?.data});
 }

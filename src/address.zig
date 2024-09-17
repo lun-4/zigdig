@@ -25,7 +25,7 @@ pub const IpAddress = struct {
     /// Reverse IP address for Classless IN-ADDR.ARPA delegation
     pub fn reverseIpv4(self: Self) ![]const u8 {
         const ip = try std.net.Ip4Address.parse(self.address.address, 0);
-        // ip.sa.addr is the raw addr u32 representation of the parsed addressed.
+        // ip.sa.addr is the raw addr u32 representation of the parsed address.
         var shifted_ip = self.bitshift(ip.sa.addr);
 
         // Just use native zig reverse
@@ -42,7 +42,7 @@ pub const IpAddress = struct {
         return self.bitshift(try std.fmt.parseInt(u32, self.address.hexAddress, 16));
     }
 
-    // Bit masking to ascertain least significant bit parsing Ipv4 out of u32
+    // Bit masking to ascertain least significant bit for parsing Ipv4 out of u32
     fn bitshift(self: Self, value: u32) [4]u32 {
         const b1 = (value & self.leastSignificationShiftValue);
         const b2 = (value >> 8) & self.leastSignificationShiftValue;
