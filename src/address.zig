@@ -1,24 +1,59 @@
 const std = @import("std");
 const assert = std.debug.assert;
 
+const AddressType = union(enum) { Ipv4, Ipv6 };
+
+const Errors = error{InvalidIP};
+
 pub const AddressMeta = union(enum) {
     address: []const u8,
     hexAddress: []const u8,
+    type: AddressType,
+
+    const Self = @This();
+
+    pub fn Ipv4() Self {
+        return Self{
+            .type = .Ipv4,
+        };
+    }
+
+    /// Creates an IpAddress from a []const u8 address
+    pub fn fromString(ip_address: []const u8) !Self {
+        if (try valid(ip_address)) {
+            return AddressMeta{ .address = .{ .address = ip_address } };
+        }
+    }
+
+    /// Validates the calling ip address is actually valid
+    pub fn valid(self: Self, ip_address: []const u8) !bool {
+        switch (self.type) {
+            .Ipv4 => {
+                _ = try std.net.Ip4Address.parse(ip_address, 0);
+            },
+            .Ipv6 => {
+                _ = try std.net.Ip6Address.parse(ip_address, 0);
+            },
+        }
+
+        return true;
+    }
 };
 
 // RFC reference for ARPA address formation: https://www.ietf.org/rfc/rfc2317.txt
 pub const IpAddress = struct {
     address: AddressMeta,
-    leastSignificationShiftValue: u16 = 0xFF, // Least significant bitshift
+    leastSignificationShiftValue: u16 = 0xFF, // Least significant bitmask value
     arpa_suffix: []const u8 = ".in-addr.arpa",
 
     allocator: std.mem.Allocator,
 
     const Self = @This();
 
-    pub fn init(allocator: std.mem.Allocator) !Self {
+    pub fn init(allocator: std.mem.Allocator, address: AddressMeta) !Self {
         return Self{
             .allocator = allocator,
+            .address = address,
         };
     }
 
@@ -26,7 +61,7 @@ pub const IpAddress = struct {
     pub fn reverseIpv4(self: Self) ![]const u8 {
         const ip = try std.net.Ip4Address.parse(self.address.address, 0);
         // ip.sa.addr is the raw addr u32 representation of the parsed address.
-        var shifted_ip = self.bitshift(ip.sa.addr);
+        var shifted_ip = self.bitmask(ip.sa.addr);
 
         // Just use native zig reverse
         std.mem.reverse(u32, &shifted_ip);
@@ -35,15 +70,19 @@ pub const IpAddress = struct {
         return try std.fmt.allocPrint(self.allocator, "{d}.{d}.{d}.{d}{s}", .{ shifted_ip[0], shifted_ip[1], shifted_ip[2], shifted_ip[3], self.arpa_suffix });
     }
 
-    pub fn reverseIpv6() !void {}
+    // Not yet implemented
+    pub fn reverseIpv6() !void {
+        std.debug.print("Not implemented", .{});
+        unreachable;
+    }
 
     /// Converts from the little-endian hex values. Used for addresses stored on disk (Unix hosts) from sectors like /proc/net/tcp || /proc/net/udp
     pub fn hexConvertAddress(self: Self) ![4]u32 {
-        return self.bitshift(try std.fmt.parseInt(u32, self.address.hexAddress, 16));
+        return self.bitmask(try std.fmt.parseInt(u32, self.address.hexAddress, 16));
     }
 
     // Bit masking to ascertain least significant bit for parsing Ipv4 out of u32
-    fn bitshift(self: Self, value: u32) [4]u32 {
+    fn bitmask(self: Self, value: u32) [4]u32 {
         const b1 = (value & self.leastSignificationShiftValue);
         const b2 = (value >> 8) & self.leastSignificationShiftValue;
         const b3 = (value >> 16) & self.leastSignificationShiftValue;
@@ -53,7 +92,7 @@ pub const IpAddress = struct {
     }
 };
 
-test "test bitshift and reverseral of ip address" {
+test "test bitmask and reverseral of ip address" {
     const ip = IpAddress{ .address = .{ .address = "8.8.4.4" }, .allocator = std.heap.page_allocator };
     const reversed = try ip.reverseIpv4();
 

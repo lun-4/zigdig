@@ -300,8 +300,8 @@ test "rdata serialization" {
 // We can wireshark/tcpdump capture the UDP packet request for dns resolution of the reverse address
 // sudo tcpdump -i lo (this is on loopback for testing with resol.conf set to 127.0.0.53)
 // Debugging commands:
-// dig -x 8.8.4.4 +trace (trace lookup from dig)
-// sudo tcpdump -i any udp port 53 (capture udp traffic for DNS queries)
+// dig -x 8.8.4.4 +noadditional +nostats +nocomments +answer +noedns +noadflag
+// sudo tcpdump -i any udp port 53 (capture udp traffic for DNS queries) (wireshark works even better to parse the packets)
 
 test "reverse address lookup" {
     const id = 4100; // Arbitrary int
@@ -365,22 +365,27 @@ test "reverse address lookup" {
 
     // std.debug.print("{d}\n", .{reply_packet.answers.len});
     // Obviously change this
-    const resource = reply_packet.answers[0];
 
-    const resource_data = try dns.ResourceData.fromOpaque(
-        resource.typ,
-        resource.opaque_rdata.?,
-        .{
-            .name_provider = .{ .full = &name_pool },
-            .allocator = name_pool.allocator,
-        },
-    );
+    // Capture all responses
+    var dns_names = try allocator.alloc([]u8, reply_packet.answers.len);
+    var index: usize = 0;
+    for (reply_packet.answers) |resource| {
+        const resource_data = try dns.ResourceData.fromOpaque(
+            resource.typ,
+            resource.opaque_rdata.?,
+            .{
+                .name_provider = .{ .full = &name_pool },
+                .allocator = name_pool.allocator,
+            },
+        );
 
-    //fromOpaque read the data, so if we utilize any standard reader/writer we have access to the []const u8 opaque data value. So we just allocprint here
-    const dns_name = try std.fmt.allocPrint(allocator, "{s}", .{resource_data});
-    std.debug.print("{s}\n", .{dns_name});
+        //fromOpaque read the data, so if we utilize any standard reader/writer we have access to the []const u8 opaque data value. So we just allocprint here
+        const dns_name = try std.fmt.allocPrint(allocator, "{s}", .{resource_data});
 
-    assert(std.mem.eql(u8, dns_name, name));
-    assert(reply_packet.answers.len > 0);
-    // std.debug.print("{s}\n", .{reply_packet.answers[0].opaque_rdata.?.data});
+        dns_names[index] = dns_name;
+        index += 1;
+    }
+
+    assert(std.mem.eql(u8, dns_names[0], name));
+    assert(dns_names.len > 0);
 }
