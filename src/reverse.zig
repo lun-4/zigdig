@@ -95,8 +95,20 @@ const ReverseLookup = struct {
     }
 
     /// Reverse lookup on a given ipv6 ip address
-    fn lookupIpv6(self: Self) void {
-        _ = self;
+    fn lookupIpv6(self: Self) ![][]const u8 {
+        var add = try address.IpAddress.init(self.allocator, try address.AddressMeta.Ipv6().fromString(self.ip_address));
+        const arpa_address = try add.reverseIpv6();
+
+        var labels: [35][]const u8 = undefined;
+        const apra_address_dns_name = try dns.Name.fromString(arpa_address, &labels);
+
+        var name_pool = dns.NamePool.init(self.allocator);
+        defer name_pool.deinitWithNames();
+
+        _ = apra_address_dns_name;
+        // Finish ipv6
+
+        return &[_][]const u8{};
     }
 };
 
@@ -213,5 +225,19 @@ test "reverse address lookup raw" {
 
 test "reverse lookup of ipv6" {
     const google_ipv6_address = "2001:4860:4860::8888";
-    _ = google_ipv6_address;
+    const name = "dns.google.";
+    var reverse = try ReverseLookup.init(std.heap.page_allocator, google_ipv6_address, 123);
+    const names = try reverse.lookupIpv6();
+    std.debug.print("{any}", .{names});
+
+    assert(names.len > 0);
+    assert(std.mem.eql(u8, names[0], name));
+
+    // Test when no name matches (localhost ipv6)
+    const non_address = "::1";
+    reverse = try ReverseLookup.init(std.heap.page_allocator, non_address, 123);
+    const names_non = try reverse.lookupIpv6();
+
+    // This should be empty
+    assert(names_non.len == 0);
 }

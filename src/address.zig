@@ -18,6 +18,12 @@ pub const AddressMeta = union(enum) {
         };
     }
 
+    pub fn Ipv6() Self {
+        return Self{
+            .type = .Ipv6,
+        };
+    }
+
     /// Creates an IpAddress from a []const u8 address
     pub fn fromString(self: Self, ip_address: []const u8) !Self {
         try self.valid(ip_address);
@@ -42,6 +48,9 @@ pub const AddressMeta = union(enum) {
 pub const IpAddress = struct {
     address: AddressMeta,
     leastSignificationShiftValue: u16 = 0xFF, // Least significant bitmask value
+    // Masks for nibble shifting for ipv6
+    nib_shift_low: u16 = 0x0F,
+    nib_shift_high: u16 = 0xF0, // Note the reversal of low/high nibble shifts
     arpa_suffix: []const u8 = ".in-addr.arpa",
     arpa_suffix_ipv6: []const u8 = "ip6.arpa",
 
@@ -69,12 +78,40 @@ pub const IpAddress = struct {
         return try std.fmt.allocPrint(self.allocator, "{d}.{d}.{d}.{d}{s}", .{ shifted_ip[0], shifted_ip[1], shifted_ip[2], shifted_ip[3], self.arpa_suffix });
     }
 
-    // Not yet implemented
-    // IPv6 address appears as a name in this domain as a sequence of nibbles in reverse order, represented as hexadecimal digits as subdomains
+    /// Reverse ipv6 address as per RFC: https://datatracker.ietf.org/doc/html/rfc3596
+    /// https://datatracker.ietf.org/doc/html/rfc3596#section-2.5 (notable section referenced)
     pub fn reverseIpv6(self: Self) !void {
-        _ = self.arpa_suffix_ipv6;
-        std.debug.print("Not implemented", .{});
-        unreachable;
+        var parsed_address = try std.net.Ip6Address.parse(self.address.address, 0);
+
+        std.mem.reverse(u8, &parsed_address.sa.addr);
+
+        var ipv6_parsed: []const u8 = undefined;
+        var index: usize = 0;
+        for (parsed_address.sa.addr) |v| {
+            // v is a byte at this point (8 bits)
+            // Create a nibble, bitshift/swap the nibble values and convert to hex to build the arpa address
+            const low_nibble = v & self.nib_shift_low;
+            const high_nibble = ((v & self.nib_shift_high) >> 4);
+
+            // This string formatting is a little annoying and there may be a better way
+            if (index == 0) {
+                ipv6_parsed = try std.fmt.allocPrint(std.heap.page_allocator, "{x}.{x}", .{ low_nibble, high_nibble });
+
+                index += 1;
+
+                continue;
+            }
+
+            if (index == parsed_address.sa.addr.len - 1) {
+                ipv6_parsed = try std.fmt.allocPrint(std.heap.page_allocator, "{s}.{x}.{x}.{s}", .{ ipv6_parsed, low_nibble, high_nibble, self.arpa_suffix_ipv6 });
+            } else {
+                ipv6_parsed = try std.fmt.allocPrint(std.heap.page_allocator, "{s}.{x}.{x}", .{ ipv6_parsed, low_nibble, high_nibble });
+            }
+
+            index += 1;
+        }
+
+        return ipv6_parsed;
     }
 
     /// Converts from the little-endian hex values. Used for addresses stored on disk (Unix hosts) from sectors like /proc/net/tcp || /proc/net/udp
