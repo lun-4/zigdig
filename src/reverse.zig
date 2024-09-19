@@ -27,6 +27,10 @@ const ReverseLookup = struct {
         var labels: [6][]const u8 = undefined;
         const apra_address_dns_name = try dns.Name.fromString(arpa_address, &labels);
 
+        return try self.buildAndSendPacket(apra_address_dns_name);
+    }
+
+    fn buildAndSendPacket(self: Self, apra_address_dns_name: dns.Name) ![][]const u8 {
         var name_pool = dns.NamePool.init(self.allocator);
         defer name_pool.deinitWithNames();
 
@@ -60,7 +64,7 @@ const ReverseLookup = struct {
 
         const reply = try conn.receiveFullPacket(
             self.allocator,
-            4096, // Max PRT query DNS packets are usually 104 bytes. This could be much smaller
+            4096, // Larger for ipv6?
             .{ .name_pool = &name_pool },
         );
         defer reply.deinit(.{ .names = false });
@@ -102,13 +106,7 @@ const ReverseLookup = struct {
         var labels: [35][]const u8 = undefined;
         const apra_address_dns_name = try dns.Name.fromString(arpa_address, &labels);
 
-        var name_pool = dns.NamePool.init(self.allocator);
-        defer name_pool.deinitWithNames();
-
-        _ = apra_address_dns_name;
-        // Finish ipv6
-
-        return &[_][]const u8{};
+        return try self.buildAndSendPacket(apra_address_dns_name);
     }
 };
 
@@ -117,7 +115,6 @@ test "reverse lookup of Ipv4 address" {
     const test_address = "8.8.4.4";
     var reverse = try ReverseLookup.init(std.heap.page_allocator, test_address, 123);
     const names = try reverse.lookupIpv4();
-    std.debug.print("{any}", .{names});
 
     assert(names.len > 0);
     assert(std.mem.eql(u8, names[0], name));

@@ -80,7 +80,7 @@ pub const IpAddress = struct {
 
     /// Reverse ipv6 address as per RFC: https://datatracker.ietf.org/doc/html/rfc3596
     /// https://datatracker.ietf.org/doc/html/rfc3596#section-2.5 (notable section referenced)
-    pub fn reverseIpv6(self: Self) !void {
+    pub fn reverseIpv6(self: Self) ![]const u8 {
         var parsed_address = try std.net.Ip6Address.parse(self.address.address, 0);
 
         std.mem.reverse(u8, &parsed_address.sa.addr);
@@ -149,42 +149,12 @@ test "text hex conversion into IP address" {
     assert(std.mem.eql(u8, c_val, "127.0.0.1"));
 }
 
-test "test reveral of ipv6 address" {
+test "test reversal of ipv6 address" {
     const address_reversed = "b.a.9.8.7.6.5.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.8.b.d.0.1.0.0.2.ip6.arpa";
     const address = "2001:db8::567:89ab";
-    const nib_shift_low = 0x0F;
-    const nib_shift_high = 0xF0; // Not the reversal of low/high nibble shifts
-    var parsed_address = try std.net.Ip6Address.parse(address, 0);
-    // Same bitmasking as above, but more
 
-    std.mem.reverse(u8, &parsed_address.sa.addr);
+    const ip = IpAddress{ .address = .{ .address = address }, .allocator = std.heap.page_allocator };
+    const ipv6_parsed = try ip.reverseIpv6();
 
-    var ipv6_parsed: []const u8 = undefined;
-    var index: usize = 0;
-    for (parsed_address.sa.addr) |v| {
-        // v is a byte at this point (8 bits)
-        // Create a nibble, bitshift/swap the nibble values and convert to hex to build the arpa address
-        const low_nibble = v & nib_shift_low;
-        const high_nibble = ((v & nib_shift_high) >> 4);
-
-        // This string formatting is a little annoying and there may be a better way
-        if (index == 0) {
-            ipv6_parsed = try std.fmt.allocPrint(std.heap.page_allocator, "{x}.{x}", .{ low_nibble, high_nibble });
-
-            index += 1;
-
-            continue;
-        }
-
-        if (index == parsed_address.sa.addr.len - 1) {
-            ipv6_parsed = try std.fmt.allocPrint(std.heap.page_allocator, "{s}.{x}.{x}.ip6.arpa", .{ ipv6_parsed, low_nibble, high_nibble });
-        } else {
-            ipv6_parsed = try std.fmt.allocPrint(std.heap.page_allocator, "{s}.{x}.{x}", .{ ipv6_parsed, low_nibble, high_nibble });
-        }
-
-        index += 1;
-    }
-
-    std.debug.print("{s}", .{ipv6_parsed});
     assert(std.mem.eql(u8, address_reversed, ipv6_parsed));
 }
