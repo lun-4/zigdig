@@ -101,7 +101,7 @@ pub const ParserOptions = struct {
     ///
     /// Makes parser return `error.Overflow` when
     /// the given name to deserialize surpasses the value in this field.
-    max_label_size: usize = 32,
+    max_label_size: usize = 35,
 };
 
 pub const ParserContext = struct {
