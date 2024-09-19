@@ -19,14 +19,14 @@ pub const AddressMeta = union(enum) {
     }
 
     /// Creates an IpAddress from a []const u8 address
-    pub fn fromString(ip_address: []const u8) !Self {
-        if (try valid(ip_address)) {
-            return AddressMeta{ .address = .{ .address = ip_address } };
-        }
+    pub fn fromString(self: Self, ip_address: []const u8) !Self {
+        try self.valid(ip_address);
+
+        return AddressMeta{ .address = ip_address };
     }
 
     /// Validates the calling ip address is actually valid
-    pub fn valid(self: Self, ip_address: []const u8) !bool {
+    pub fn valid(self: Self, ip_address: []const u8) !void {
         switch (self.type) {
             .Ipv4 => {
                 _ = try std.net.Ip4Address.parse(ip_address, 0);
@@ -35,8 +35,6 @@ pub const AddressMeta = union(enum) {
                 _ = try std.net.Ip6Address.parse(ip_address, 0);
             },
         }
-
-        return true;
     }
 };
 
@@ -45,6 +43,7 @@ pub const IpAddress = struct {
     address: AddressMeta,
     leastSignificationShiftValue: u16 = 0xFF, // Least significant bitmask value
     arpa_suffix: []const u8 = ".in-addr.arpa",
+    arpa_suffix_ipv6: []const u8 = "ip6.arpa",
 
     allocator: std.mem.Allocator,
 
@@ -71,7 +70,9 @@ pub const IpAddress = struct {
     }
 
     // Not yet implemented
-    pub fn reverseIpv6() !void {
+    // IPv6 address appears as a name in this domain as a sequence of nibbles in reverse order, represented as hexadecimal digits as subdomains
+    pub fn reverseIpv6(self: Self) !void {
+        _ = self.arpa_suffix_ipv6;
         std.debug.print("Not implemented", .{});
         unreachable;
     }
@@ -109,4 +110,44 @@ test "text hex conversion into IP address" {
     const c_val = try std.fmt.bufPrint(&buf, "{d}.{d}.{d}.{d}", .{ hex_converted[0], hex_converted[1], hex_converted[2], hex_converted[3] });
 
     assert(std.mem.eql(u8, c_val, "127.0.0.1"));
+}
+
+test "test reveral of ipv6 address" {
+    const address_reversed = "b.a.9.8.7.6.5.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.8.b.d.0.1.0.0.2.ip6.arpa";
+    const address = "2001:db8::567:89ab";
+    const nib_shift_low = 0x0F;
+    const nib_shift_high = 0xF0; // Not the reversal of low/high nibble shifts
+    var parsed_address = try std.net.Ip6Address.parse(address, 0);
+    // Same bitmasking as above, but more
+
+    std.mem.reverse(u8, &parsed_address.sa.addr);
+
+    var ipv6_parsed: []const u8 = undefined;
+    var index: usize = 0;
+    for (parsed_address.sa.addr) |v| {
+        // v is a byte at this point (8 bits)
+        // Create a nibble, bitshift/swap the nibble values and convert to hex to build the arpa address
+        const low_nibble = v & nib_shift_low;
+        const high_nibble = ((v & nib_shift_high) >> 4);
+
+        // This string formatting is a little annoying and there may be a better way
+        if (index == 0) {
+            ipv6_parsed = try std.fmt.allocPrint(std.heap.page_allocator, "{x}.{x}", .{ low_nibble, high_nibble });
+
+            index += 1;
+
+            continue;
+        }
+
+        if (index == parsed_address.sa.addr.len - 1) {
+            ipv6_parsed = try std.fmt.allocPrint(std.heap.page_allocator, "{s}.{x}.{x}.ip6.arpa", .{ ipv6_parsed, low_nibble, high_nibble });
+        } else {
+            ipv6_parsed = try std.fmt.allocPrint(std.heap.page_allocator, "{s}.{x}.{x}", .{ ipv6_parsed, low_nibble, high_nibble });
+        }
+
+        index += 1;
+    }
+
+    std.debug.print("{s}", .{ipv6_parsed});
+    assert(std.mem.eql(u8, address_reversed, ipv6_parsed));
 }
