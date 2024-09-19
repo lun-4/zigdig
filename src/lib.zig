@@ -12,6 +12,9 @@ pub const address = @import("address.zig");
 pub const IpAddress = address.IpAddress;
 pub const IpAdressMeta = address.AddressMeta;
 
+pub const reverse = @import("reverse.zig");
+pub const ReverseLookup = reverse.ReverseLookup;
+
 const pkt = @import("packet.zig");
 pub const Packet = pkt.Packet;
 pub const ResponseCode = pkt.ResponseCode;

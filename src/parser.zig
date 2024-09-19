@@ -101,7 +101,7 @@ pub const ParserOptions = struct {
     ///
     /// Makes parser return `error.Overflow` when
     /// the given name to deserialize surpasses the value in this field.
-    max_label_size: usize = 35,
+    max_label_size: usize = 35, // Note: max label size *must* match the max label size (max_ipv6_label_size) within reverse.zig Reverse struct
 };
 
 pub const ParserContext = struct {

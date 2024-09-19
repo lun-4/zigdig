@@ -3,14 +3,16 @@ const address = @import("./address.zig");
 const dns = @import("./lib.zig");
 const assert = std.debug.assert;
 
-const ReverseLookup = struct {
+pub const ReverseLookup = struct {
     allocator: std.mem.Allocator,
     ip_address: []const u8,
     packet_id: u16, // Arbitrary packet ID
 
     const Self = @This();
+    const max_ipv6_label_size = 35;
+    const max_ipv4_label_size = 6;
 
-    fn init(allocator: std.mem.Allocator, ip_address: []const u8, packet_id: u16) !Self {
+    pub fn init(allocator: std.mem.Allocator, ip_address: []const u8, packet_id: u16) !Self {
         return Self{
             .allocator = allocator,
             .ip_address = ip_address,
@@ -20,16 +22,28 @@ const ReverseLookup = struct {
 
     /// Reverse lookup on a given ipv4 ip address
     /// Returns an array of N Dns Names resolved from reverse lookup
-    fn lookupIpv4(self: Self) ![][]const u8 {
+    pub fn lookupIpv4(self: Self) ![][]const u8 {
         var add = try address.IpAddress.init(self.allocator, try address.AddressMeta.Ipv4().fromString(self.ip_address));
         const arpa_address = try add.reverseIpv4();
 
-        var labels: [6][]const u8 = undefined;
+        var labels: [max_ipv4_label_size][]const u8 = undefined;
         const apra_address_dns_name = try dns.Name.fromString(arpa_address, &labels);
 
         return try self.buildAndSendPacket(apra_address_dns_name);
     }
 
+    /// Reverse lookup on a given ipv6 ip address
+    pub fn lookupIpv6(self: Self) ![][]const u8 {
+        var add = try address.IpAddress.init(self.allocator, try address.AddressMeta.Ipv6().fromString(self.ip_address));
+        const arpa_address = try add.reverseIpv6();
+
+        var labels: [max_ipv6_label_size][]const u8 = undefined;
+        const apra_address_dns_name = try dns.Name.fromString(arpa_address, &labels);
+
+        return try self.buildAndSendPacket(apra_address_dns_name);
+    }
+
+    /// Internal function to build and send the DNS packet for reverse lookup agnostic of IP address type (ipv4 | ipv6)
     fn buildAndSendPacket(self: Self, apra_address_dns_name: dns.Name) ![][]const u8 {
         var name_pool = dns.NamePool.init(self.allocator);
         defer name_pool.deinitWithNames();
@@ -96,17 +110,6 @@ const ReverseLookup = struct {
         } else {
             return &[_][]const u8{}; // empty
         }
-    }
-
-    /// Reverse lookup on a given ipv6 ip address
-    fn lookupIpv6(self: Self) ![][]const u8 {
-        var add = try address.IpAddress.init(self.allocator, try address.AddressMeta.Ipv6().fromString(self.ip_address));
-        const arpa_address = try add.reverseIpv6();
-
-        var labels: [35][]const u8 = undefined;
-        const apra_address_dns_name = try dns.Name.fromString(arpa_address, &labels);
-
-        return try self.buildAndSendPacket(apra_address_dns_name);
     }
 };
 
