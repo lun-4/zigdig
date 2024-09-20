@@ -155,8 +155,8 @@ pub const Name = union(enum) {
 
             // set first two bits of ptr_offset to zero as they're the
             // pointer prefix bits (which are always 1, which brings problems)
-            offset &= ~@as(u16, 1 << 15);
-            offset &= ~@as(u16, 1 << 14);
+            // Do this with a bitmask operation
+            offset &= 0x3FFF;
 
             return LabelComponent{ .Pointer = offset };
         } else {

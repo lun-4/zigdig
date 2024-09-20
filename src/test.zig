@@ -5,12 +5,13 @@ const io = std.io;
 
 const dns = @import("lib.zig");
 const Packet = dns.Packet;
+const assert = std.debug.assert;
 
 test "convert domain string to dns name" {
     const domain = "www.google.com";
     var name_buffer: [3][]const u8 = undefined;
     const name = (try dns.Name.fromString(domain[0..], &name_buffer)).full;
-    std.debug.assert(name.labels.len == 3);
+    assert(name.labels.len == 3);
     try std.testing.expect(std.mem.eql(u8, name.labels[0], "www"));
     try std.testing.expect(std.mem.eql(u8, name.labels[1], "google"));
     try std.testing.expect(std.mem.eql(u8, name.labels[2], "com"));
@@ -294,4 +295,42 @@ test "rdata serialization" {
     var encode_buffer: [1024]u8 = undefined;
     const encoded_result = encodeBase64(&encode_buffer, serialized_result);
     try std.testing.expectEqualStrings(PACKET_WITH_RDATA, encoded_result);
+}
+
+// Recreation of tests from reverse.zig to show basic API usage for reverse lookups
+test "reverse address lookup Ipv4" {
+    const name = "dns.google.";
+    const test_address = "8.8.4.4";
+    var reverse = try dns.ReverseLookup.init(std.heap.page_allocator, test_address, 123);
+    const names = try reverse.lookupIpv4();
+
+    assert(names.len > 0);
+    assert(std.mem.eql(u8, names[0], name));
+
+    // Test when no name matches
+    const non_address = "123.123.123.123";
+    reverse = try dns.ReverseLookup.init(std.heap.page_allocator, non_address, 123);
+    const names_non = try reverse.lookupIpv4();
+
+    // This should be empty
+    assert(names_non.len == 0);
+}
+
+// Recreation of tests from reverse.zig to show basic API usage for reverse lookups (ipv6)
+test "reverse address lookup Ipv6" {
+    const test_address = "2001:4860:4860::8888";
+    const name = "dns.google.";
+    var reverse = try dns.ReverseLookup.init(std.heap.page_allocator, test_address, 123);
+    const names = try reverse.lookupIpv6();
+
+    assert(names.len > 0);
+    assert(std.mem.eql(u8, names[0], name));
+
+    // Test when no name matches
+    const non_address = "2001:6665:1234::1234";
+    reverse = try dns.ReverseLookup.init(std.heap.page_allocator, non_address, 123);
+    const names_non = try reverse.lookupIpv6();
+
+    // This should be empty
+    assert(names_non.len == 0);
 }
