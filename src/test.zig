@@ -296,3 +296,22 @@ test "rdata serialization" {
     const encoded_result = encodeBase64(&encode_buffer, serialized_result);
     try std.testing.expectEqualStrings(PACKET_WITH_RDATA, encoded_result);
 }
+
+// Recreation of tests from reverse.zig to show basic API usage for reverse lookups
+test "reverse address lookup" {
+    const name = "dns.google.";
+    const test_address = "8.8.4.4";
+    var reverse = try dns.ReverseLookup.init(std.heap.page_allocator, test_address, 123);
+    const names = try reverse.lookupIpv4();
+
+    assert(names.len > 0);
+    assert(std.mem.eql(u8, names[0], name));
+
+    // Test when no name matches
+    const non_address = "123.123.123.123";
+    reverse = try dns.ReverseLookup.init(std.heap.page_allocator, non_address, 123);
+    const names_non = try reverse.lookupIpv4();
+
+    // This should be empty
+    assert(names_non.len == 0);
+}

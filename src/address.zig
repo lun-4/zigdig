@@ -49,8 +49,8 @@ pub const IpAddress = struct {
     address: AddressMeta,
     leastSignificationShiftValue: u16 = 0xFF, // Least significant bitmask value
     // Masks for nibble shifting for ipv6
-    nib_shift_low: u16 = 0x0F,
-    nib_shift_high: u16 = 0xF0, // Note the reversal of low/high nibble shifts
+    nib_shift_low: u16 = 0x0F, // Lowest significant bit
+    nib_shift_high: u16 = 0xF0, // Most significant bit
     arpa_suffix: []const u8 = ".in-addr.arpa",
     arpa_suffix_ipv6: []const u8 = "ip6.arpa",
 

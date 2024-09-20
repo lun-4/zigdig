@@ -30,6 +30,7 @@ pub const Name = union(enum) {
     full: FullName,
 
     const Self = @This();
+    const magic_number: usize = 58; // Number of bytes for non-response ipv6 reverse address lookups
 
     /// Deinitializes the entire name, including the labels inside, given
     /// an allocator.
@@ -48,6 +49,12 @@ pub const Name = union(enum) {
                 allocator.free(full.labels);
             },
         }
+    }
+
+    fn magicNumber(self: Self) bool {
+        if (self.raw.components.len > 1 or self.raw.components.len == 0) return false;
+
+        return self.raw.components[0].Pointer == magic_number;
     }
 
     /// Caller owns returned memory.
@@ -155,8 +162,8 @@ pub const Name = union(enum) {
 
             // set first two bits of ptr_offset to zero as they're the
             // pointer prefix bits (which are always 1, which brings problems)
-            offset &= ~@as(u16, 1 << 15);
-            offset &= ~@as(u16, 1 << 14);
+            // Do this with a bitmask operation
+            offset &= 0x3FFF;
 
             return LabelComponent{ .Pointer = offset };
         } else {
@@ -419,7 +426,7 @@ pub const NamePool = struct {
                                 name_length += label.len;
                             const end_index = packet_index + name_length;
 
-                            if (start_index <= packet_offset and packet_offset <= end_index) {
+                            if ((start_index <= packet_offset and packet_offset <= end_index) or name.magicNumber()) {
                                 maybe_referenced_name = held_name;
                             }
                         }
