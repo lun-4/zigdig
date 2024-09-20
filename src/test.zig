@@ -298,7 +298,7 @@ test "rdata serialization" {
 }
 
 // Recreation of tests from reverse.zig to show basic API usage for reverse lookups
-test "reverse address lookup" {
+test "reverse address lookup Ipv4" {
     const name = "dns.google.";
     const test_address = "8.8.4.4";
     var reverse = try dns.ReverseLookup.init(std.heap.page_allocator, test_address, 123);
@@ -311,6 +311,25 @@ test "reverse address lookup" {
     const non_address = "123.123.123.123";
     reverse = try dns.ReverseLookup.init(std.heap.page_allocator, non_address, 123);
     const names_non = try reverse.lookupIpv4();
+
+    // This should be empty
+    assert(names_non.len == 0);
+}
+
+// Recreation of tests from reverse.zig to show basic API usage for reverse lookups (ipv6)
+test "reverse address lookup Ipv6" {
+    const test_address = "2001:4860:4860::8888";
+    const name = "dns.google.";
+    var reverse = try dns.ReverseLookup.init(std.heap.page_allocator, test_address, 123);
+    const names = try reverse.lookupIpv6();
+
+    assert(names.len > 0);
+    assert(std.mem.eql(u8, names[0], name));
+
+    // Test when no name matches
+    const non_address = "2001:6665:1234::1234";
+    reverse = try dns.ReverseLookup.init(std.heap.page_allocator, non_address, 123);
+    const names_non = try reverse.lookupIpv6();
 
     // This should be empty
     assert(names_non.len == 0);

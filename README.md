@@ -9,6 +9,7 @@ help me decide if this api is good: https://github.com/lun-4/zigdig/issues/10
  - supports a subset of rdata (i do not have any plans to support 100% of DNS, but SRV/MX/TXT/A/AAAA
   are there, which most likely will be enough for your use cases)
  - has helpers for reading `/etc/resolv.conf` (not that much, really)
+ - classless IN-ADDR.ARPA (IPv4) and IP6.ARPA (IPv6) delegations (reverse lookups)
 
 ## what does it not do
  - no edns0
@@ -55,7 +56,7 @@ pub fn main() !void {
     defer {
         _ = gpa.deinit();
     }
-    var allocator = gpa.alloator();
+    var allocator = gpa.allocator();
 
     var addresses = try dns.helpers.getAddressList("ziglang.org", allocator);
     defer addresses.deinit();
@@ -142,6 +143,21 @@ pub fn main() !void {
     const ziglang_address = resource_data.A;
 }
 
+```
+
+### Reverse lookups examples
+``` 
+    // Ipv4
+    const name = "dns.google.";
+    const test_address = "8.8.4.4";
+    var reverse = try dns.ReverseLookup.init(std.heap.page_allocator, test_address, 123);
+    const names = try reverse.lookupIpv4();
+
+    // Ipv6
+    const test_address = "2001:4860:4860::8888";
+    const name = "dns.google.";
+    var reverse = try dns.ReverseLookup.init(std.heap.page_allocator, test_address, 123);
+    const names = try reverse.lookupIpv6();
 ```
 
 it is recommended to look at zigdig's source on `src/main.zig` to understand
