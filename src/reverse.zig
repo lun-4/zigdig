@@ -40,7 +40,7 @@ pub const ReverseLookup = struct {
         var labels: [max_ipv6_label_size][]const u8 = undefined;
         const apra_address_dns_name = try dns.Name.fromString(arpa_address, &labels);
 
-        return try self.buildAndSendPacket(apra_address_dns_name);
+        return self.buildAndSendPacket(apra_address_dns_name) catch &[_][]const u8{};
     }
 
     /// Internal function to build and send the DNS packet for reverse lookup agnostic of IP address type (ipv4 | ipv6)
@@ -144,7 +144,7 @@ test "reverse lookup of ipv6" {
     // // Test when no name matches (localhost ipv6)
     const non_existent_ipv6 = "2001:6665:1234::1234";
     reverse = try ReverseLookup.init(std.heap.page_allocator, non_existent_ipv6, 124);
-    const names_non = reverse.lookupIpv6() catch &[_][]const u8{};
+    const names_non = try reverse.lookupIpv6();
 
     // This should be empty
     assert(names_non.len == 0);
