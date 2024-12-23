@@ -456,6 +456,56 @@ fn fetchTrustedAddresses(
     return try receiveTrustedAddresses(allocator, &conn, .{});
 }
 
+// implementation taken from std.net address resolution
+fn lookupHosts(addrs: *std.ArrayList(std.net.Address), family: std.posix.sa_family_t, port: u16, name: []const u8) !void {
+    const file = std.fs.openFileAbsoluteZ("/etc/hosts", .{}) catch |err| switch (err) {
+        error.FileNotFound,
+        error.NotDir,
+        error.AccessDenied,
+        => return,
+        else => |e| return e,
+    };
+    defer file.close();
+
+    var buffered_reader = std.io.bufferedReader(file.reader());
+    const reader = buffered_reader.reader();
+    var line_buf: [512]u8 = undefined;
+    while (reader.readUntilDelimiterOrEof(&line_buf, '\n') catch |err| switch (err) {
+        error.StreamTooLong => blk: {
+            // Skip to the delimiter in the reader, to fix parsing
+            try reader.skipUntilDelimiterOrEof('\n');
+            // Use the truncated line. A truncated comment or hostname will be handled correctly.
+            break :blk &line_buf;
+        },
+        else => |e| return e,
+    }) |line| {
+        var split_it = std.mem.splitScalar(u8, line, '#');
+        const no_comment_line = split_it.first();
+
+        var line_it = std.mem.tokenizeAny(u8, no_comment_line, " \t");
+        const ip_text = line_it.next() orelse continue;
+        var first_name_text: ?[]const u8 = null;
+        while (line_it.next()) |name_text| {
+            if (first_name_text == null) first_name_text = name_text;
+            if (std.mem.eql(u8, name_text, name)) {
+                break;
+            }
+        } else continue;
+
+        const addr = std.net.Address.parseExpectingFamily(ip_text, family, port) catch |err| switch (err) {
+            error.Overflow,
+            error.InvalidEnd,
+            error.InvalidCharacter,
+            error.Incomplete,
+            error.InvalidIPAddressFormat,
+            error.InvalidIpv4Mapping,
+            error.NonCanonical,
+            => continue,
+        };
+        try addrs.append(addr);
+    }
+}
+
 /// A getAddressList-like function that:
 ///  - gets a nameserver from resolv.conf
 ///  - starts a DNSConnection
@@ -472,34 +522,35 @@ pub fn getAddressList(incoming_name: []const u8, port: u16, allocator: std.mem.A
     defer final_list.deinit();
 
     const last_label = name.full.labels[name.full.labels.len - 1];
+
+    // see if we can short-circuit on parsing the name as addr
     if (std.net.Address.parseExpectingFamily(incoming_name, std.posix.AF.INET, port) catch null) |addr| {
         try final_list.append(addr);
-    }
-    if (std.net.Address.parseExpectingFamily(incoming_name, std.posix.AF.INET6, port) catch null) |addr| {
+    } else if (std.net.Address.parseExpectingFamily(incoming_name, std.posix.AF.INET6, port) catch null) |addr| {
         try final_list.append(addr);
-    }
-
-    // RFC 6761 Section 6.3.3
-    // Name resolution APIs and libraries SHOULD recognize localhost
-    // names as special and SHOULD always return the IP loopback address
-    // for address queries and negative responses for all other query
-    // types.
-    if (std.mem.eql(u8, last_label, "localhost")) {
+    } else if (std.mem.eql(u8, last_label, "localhost")) {
+        // RFC 6761 Section 6.3.3
+        // Name resolution APIs and libraries SHOULD recognize localhost
+        // names as special and SHOULD always return the IP loopback address
+        // for address queries and negative responses for all other query
+        // types.
         try final_list.append(std.net.Address.parseIp4("127.0.0.1", port) catch unreachable);
         try final_list.append(std.net.Address.parseIp6("::1", port) catch unreachable);
-        return AddressList{
-            .allocator = allocator,
-            .addrs = try final_list.toOwnedSlice(),
-        };
+    } else {
+        try lookupHosts(&final_list, std.posix.AF.INET, port, incoming_name);
+        try lookupHosts(&final_list, std.posix.AF.INET, port, incoming_name);
+
+        if (final_list.items.len == 0) {
+            // if that didn't work, go to dns server
+            const addrs_v4 = try fetchTrustedAddresses(allocator, name, .A);
+            defer allocator.free(addrs_v4);
+            for (addrs_v4) |addr| try final_list.append(addr);
+
+            const addrs_v6 = try fetchTrustedAddresses(allocator, name, .AAAA);
+            defer allocator.free(addrs_v6);
+            for (addrs_v6) |addr| try final_list.append(addr);
+        }
     }
-
-    const addrs_v4 = try fetchTrustedAddresses(allocator, name, .A);
-    defer allocator.free(addrs_v4);
-    for (addrs_v4) |addr| try final_list.append(addr);
-
-    const addrs_v6 = try fetchTrustedAddresses(allocator, name, .AAAA);
-    defer allocator.free(addrs_v6);
-    for (addrs_v6) |addr| try final_list.append(addr);
 
     return AddressList{
         .allocator = allocator,
