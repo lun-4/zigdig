@@ -496,3 +496,10 @@ pub const NamePool = struct {
         }
     }
 };
+
+test "localhost parses correctly" {
+    var name_buffer: [128][]const u8 = undefined;
+    const name = try dns.Name.fromString("localhost", &name_buffer);
+    try std.testing.expectEqual(name.full.labels.len, 1);
+    try std.testing.expectEqualStrings(name.full.labels[0], "localhost");
+}

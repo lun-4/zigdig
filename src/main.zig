@@ -114,4 +114,5 @@ pub fn main() !void {
 test "awooga" {
     std.testing.refAllDecls(@This());
     std.testing.refAllDecls(@import("test.zig"));
+    std.testing.refAllDecls(@import("name.zig"));
 }
