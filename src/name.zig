@@ -302,8 +302,19 @@ pub const FullName = struct {
         if (domain.len > 255) return error.Overflow;
 
         var it = std.mem.split(u8, domain, ".");
+
+        // labels can finish in a dot, depresenting the null label right after
+        // this is a dirty solution so that i dont need to write to memory too much
+        // but it should work
+        var label_count: usize = 0;
+        while (it.next()) |_| {
+            label_count += 1;
+        }
+
+        it = std.mem.split(u8, domain, ".");
         var idx: usize = 0;
         while (it.next()) |label| {
+            if (idx == label_count - 1 and label.len == 0) continue;
             if (label.len == 0) return error.EmptyLabelInName;
             if (idx > (buffer.len - 1)) return error.Overflow;
 
@@ -502,4 +513,8 @@ test "localhost parses correctly" {
     const name = try dns.Name.fromString("localhost", &name_buffer);
     try std.testing.expectEqual(name.full.labels.len, 1);
     try std.testing.expectEqualStrings(name.full.labels[0], "localhost");
+
+    const name2 = try dns.Name.fromString("localhost.", &name_buffer);
+    try std.testing.expectEqual(name2.full.labels.len, 1);
+    try std.testing.expectEqualStrings(name2.full.labels[0], "localhost");
 }

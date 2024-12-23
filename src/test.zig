@@ -10,10 +10,10 @@ test "convert domain string to dns name" {
     const domain = "www.google.com";
     var name_buffer: [3][]const u8 = undefined;
     const name = (try dns.Name.fromString(domain[0..], &name_buffer)).full;
-    std.debug.assert(name.labels.len == 3);
-    try std.testing.expect(std.mem.eql(u8, name.labels[0], "www"));
-    try std.testing.expect(std.mem.eql(u8, name.labels[1], "google"));
-    try std.testing.expect(std.mem.eql(u8, name.labels[2], "com"));
+    try std.testing.expectEqual(3, name.labels.len);
+    try std.testing.expectEqualStrings("www", name.labels[0]);
+    try std.testing.expectEqualStrings("google", name.labels[1]);
+    try std.testing.expectEqualStrings("com", name.labels[2]);
 }
 
 test "convert domain string to dns name (buffer overflow case)" {
