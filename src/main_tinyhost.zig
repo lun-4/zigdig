@@ -36,7 +36,7 @@ pub fn main() !void {
         return error.InvalidArgs;
     });
 
-    var addrs = try dns.helpers.getAddressList(name_string, allocator);
+    var addrs = try dns.helpers.getAddressList(name_string, 80, allocator);
     defer addrs.deinit();
 
     var stdout = std.io.getStdOut().writer();

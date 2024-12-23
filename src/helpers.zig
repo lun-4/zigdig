@@ -464,12 +464,28 @@ fn fetchTrustedAddresses(
 /// The only memory allocated here is for the list that holds std.net.Address.
 ///
 /// This function does not implement the "happy eyeballs" algorithm.
-pub fn getAddressList(incoming_name: []const u8, allocator: std.mem.Allocator) !AddressList {
+pub fn getAddressList(incoming_name: []const u8, port: u16, allocator: std.mem.Allocator) !AddressList {
     var name_buffer: [128][]const u8 = undefined;
     const name = try dns.Name.fromString(incoming_name, &name_buffer);
 
     var final_list = std.ArrayList(std.net.Address).init(allocator);
     defer final_list.deinit();
+
+    const last_label = name.full.labels[name.full.labels.len - 1];
+
+    // RFC 6761 Section 6.3.3
+    // Name resolution APIs and libraries SHOULD recognize localhost
+    // names as special and SHOULD always return the IP loopback address
+    // for address queries and negative responses for all other query
+    // types.
+    if (std.mem.eql(u8, last_label, "localhost")) {
+        try final_list.append(std.net.Address.parseIp4("127.0.0.1", port) catch unreachable);
+        try final_list.append(std.net.Address.parseIp6("::1", port) catch unreachable);
+        return AddressList{
+            .allocator = allocator,
+            .addrs = try final_list.toOwnedSlice(),
+        };
+    }
 
     const addrs_v4 = try fetchTrustedAddresses(allocator, name, .A);
     defer allocator.free(addrs_v4);
@@ -483,4 +499,11 @@ pub fn getAddressList(incoming_name: []const u8, allocator: std.mem.Allocator) !
         .allocator = allocator,
         .addrs = try final_list.toOwnedSlice(),
     };
+}
+
+test "localhost always resolves to 127.0.0.1" {
+    const addrs = try getAddressList("localhost", 80, std.testing.allocator);
+    defer addrs.deinit();
+    try std.testing.expectEqual(16777343, addrs.addrs[0].in.sa.addr);
+    try std.testing.expectEqualStrings("\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x01", &addrs.addrs[1].in6.sa.addr);
 }

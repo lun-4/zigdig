@@ -115,4 +115,5 @@ test "awooga" {
     std.testing.refAllDecls(@This());
     std.testing.refAllDecls(@import("test.zig"));
     std.testing.refAllDecls(@import("name.zig"));
+    std.testing.refAllDecls(@import("helpers.zig"));
 }
