@@ -472,6 +472,12 @@ pub fn getAddressList(incoming_name: []const u8, port: u16, allocator: std.mem.A
     defer final_list.deinit();
 
     const last_label = name.full.labels[name.full.labels.len - 1];
+    if (std.net.Address.parseExpectingFamily(incoming_name, std.posix.AF.INET, port) catch null) |addr| {
+        try final_list.append(addr);
+    }
+    if (std.net.Address.parseExpectingFamily(incoming_name, std.posix.AF.INET6, port) catch null) |addr| {
+        try final_list.append(addr);
+    }
 
     // RFC 6761 Section 6.3.3
     // Name resolution APIs and libraries SHOULD recognize localhost
