@@ -329,6 +329,10 @@ const AddressList = struct {
     pub fn deinit(self: @This()) void {
         self.allocator.free(self.addrs);
     }
+
+    fn fromList(allocator: std.mem.Allocator, addrs: *std.ArrayList(std.net.Address)) !AddressList {
+        return AddressList{ .allocator = allocator, .addrs = try addrs.toOwnedSlice() };
+    }
 };
 
 const ReceiveTrustedAddressesOptions = struct {
@@ -552,10 +556,16 @@ pub fn getAddressList(incoming_name: []const u8, port: u16, allocator: std.mem.A
         }
     }
 
-    return AddressList{
-        .allocator = allocator,
-        .addrs = try final_list.toOwnedSlice(),
-    };
+    // RFC 6761 is not run if everything is v4 or only 1 address returned
+    if (final_list.items.len == 1) return AddressList.fromList(allocator, &final_list);
+    const all_ip4 = for (final_list.items) |addr| {
+        if (addr.any.family != std.posix.AF.INET) break false;
+    } else true;
+    if (all_ip4) return AddressList.fromList(allocator, &final_list);
+
+    // TODO implement RFC6761
+
+    return AddressList.fromList(allocator, &final_list);
 }
 
 test "localhost always resolves to 127.0.0.1" {
