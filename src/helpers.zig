@@ -565,10 +565,7 @@ pub fn getAddressList(incoming_name: []const u8, port: u16, allocator: std.mem.A
     } else true;
     if (all_ip4) return AddressList.fromList(allocator, &final_list);
 
-    // Default policy table from RFC 6724 Section 2.1
     std.mem.sort(std.net.Address, final_list.items, {}, addrCmpLessThan);
-
-    // TODO implement RFC6761
 
     return AddressList.fromList(allocator, &final_list);
 }
@@ -583,6 +580,7 @@ const Policy = struct {
     }
 };
 
+// Default policy table from RFC 6724 Section 2.1
 const policy_table = [_]Policy{
     Policy.new(CidrRange.parse("::1/128") catch unreachable, 50, 0), // Loopback
     Policy.new(CidrRange.parse("::/0") catch unreachable, 40, 1), // Default

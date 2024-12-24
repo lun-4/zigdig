@@ -132,15 +132,22 @@ pub const CidrRange = struct {
         const full_bytes = self.prefix_len / 8;
         const remaining_bits = self.prefix_len % 8;
 
+        // For IPv4, we only compare the last 4 bytes
+        const start_byte: usize = if (self.version == .v4) 12 else 0;
+
         // Compare full bytes
-        if (!mem.eql(u8, addr[0..full_bytes], self.first_address[0..full_bytes])) {
-            return false;
+        for (self.first_address[start_byte .. start_byte + full_bytes], addr[start_byte .. start_byte + full_bytes], 0..) |a, b, i| {
+            _ = i;
+            if (a != b) {
+                return false;
+            }
         }
 
         // Compare remaining bits if any
         if (remaining_bits > 0) {
             const mask = @as(u8, 0xFF) << @intCast(8 - remaining_bits);
-            if ((addr[full_bytes] & mask) != (self.first_address[full_bytes] & mask)) {
+            const byte_pos = start_byte + full_bytes;
+            if ((self.first_address[byte_pos] & mask) != (addr[byte_pos] & mask)) {
                 return false;
             }
         }
