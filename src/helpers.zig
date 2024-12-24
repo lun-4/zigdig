@@ -1,6 +1,8 @@
 const std = @import("std");
 const dns = @import("lib.zig");
 
+const CidrRange = @import("cidr.zig").CidrRange;
+
 fn printList(
     name_pool: *dns.NamePool,
     writer: anytype,
@@ -563,14 +565,105 @@ pub fn getAddressList(incoming_name: []const u8, port: u16, allocator: std.mem.A
     } else true;
     if (all_ip4) return AddressList.fromList(allocator, &final_list);
 
+    // Default policy table from RFC 6724 Section 2.1
+    std.mem.sort(std.net.Address, final_list.items, {}, addrCmpLessThan);
+
     // TODO implement RFC6761
 
     return AddressList.fromList(allocator, &final_list);
 }
 
+const Policy = struct {
+    cidr: CidrRange,
+    precedence: usize,
+    label: usize,
+
+    pub fn new(cidr: CidrRange, precedence: usize, label: usize) @This() {
+        return .{ .cidr = cidr, .precedence = precedence, .label = label };
+    }
+};
+
+const policy_table = [_]Policy{
+    Policy.new(CidrRange.parse("::1/128") catch unreachable, 50, 0), // Loopback
+    Policy.new(CidrRange.parse("::/0") catch unreachable, 40, 1), // Default
+    Policy.new(CidrRange.parse("::ffff:0:0/96") catch unreachable, 35, 4), // IPv4-mapped
+    Policy.new(CidrRange.parse("2002::/16") catch unreachable, 30, 2), // 6to4
+    Policy.new(CidrRange.parse("2001::/32") catch unreachable, 5, 5), // Teredo
+    Policy.new(CidrRange.parse("fc00::/7") catch unreachable, 3, 13), // ULA
+    Policy.new(CidrRange.parse("::/96") catch unreachable, 1, 3), // IPv4-compatible
+};
+fn cmpGetPrecedence(addr: std.net.Address) usize {
+    for (policy_table) |policy| {
+        if (policy.cidr.contains(&addr.in6.sa.addr) catch unreachable) {
+            return policy.precedence;
+        }
+    }
+    return 40; // Default precedence if no match
+}
+
+fn isMulticast(a: std.net.Address) bool {
+    return a.in6.sa.addr[0] == 0xff;
+}
+
+fn isLinklocal(a: std.net.Address) bool {
+    return a.in6.sa.addr[0] == 0xfe and (a.in6.sa.addr[1] & 0xc0) == 0x80;
+}
+
+fn isLoopback(a: std.net.Address) bool {
+    return a.in6.sa.addr[0] == 0 and a.in6.sa.addr[1] == 0 and
+        a.in6.sa.addr[2] == 0 and
+        a.in6.sa.addr[12] == 0 and a.in6.sa.addr[13] == 0 and
+        a.in6.sa.addr[14] == 0 and a.in6.sa.addr[15] == 1;
+}
+
+fn isSitelocal(a: std.net.Address) bool {
+    return a.in6.sa.addr[0] == 0xfe and (a.in6.sa.addr[1] & 0xc0) == 0xc0;
+}
+
+fn cmpGetScope(addr: std.net.Address) usize {
+    if (isMulticast(addr)) {
+        return addr.in6.sa.addr[1] & 15;
+    } else if (isLinklocal(addr)) {
+        return 2;
+    } else if (isLoopback(addr)) {
+        return 2;
+    } else if (isSitelocal(addr)) {
+        return 5;
+    }
+    return 14;
+}
+
+fn cmpAddresses(a: std.net.Address, b: std.net.Address) bool {
+    // RFC 6761. Rules 3, 4, and 7 are omitted.
+
+    // Rule 6: Prefer higher precedence
+    const prec_a = cmpGetPrecedence(a);
+    const prec_b = cmpGetPrecedence(b);
+
+    if (prec_a != prec_b) {
+        return if (prec_a > prec_b) false else true;
+    }
+
+    const scope_a = cmpGetScope(a);
+    const scope_b = cmpGetScope(b);
+
+    // Rule 8: Prefer smaller scope
+    if (scope_a != scope_b) {
+        return if (scope_a < scope_b) false else true;
+    }
+
+    // Rule 10: Otherwise, leave order unchanged
+    return false;
+}
+
+fn addrCmpLessThan(context: void, b: std.net.Address, a: std.net.Address) bool {
+    _ = context;
+    return cmpAddresses(a, b);
+}
+
 test "localhost always resolves to 127.0.0.1" {
     const addrs = try getAddressList("localhost", 80, std.testing.allocator);
     defer addrs.deinit();
-    try std.testing.expectEqual(16777343, addrs.addrs[0].in.sa.addr);
-    try std.testing.expectEqualStrings("\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x01", &addrs.addrs[1].in6.sa.addr);
+    try std.testing.expectEqual(16777343, addrs.addrs[1].in.sa.addr);
+    try std.testing.expectEqualStrings("\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x01", &addrs.addrs[0].in6.sa.addr);
 }
