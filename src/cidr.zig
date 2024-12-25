@@ -103,6 +103,7 @@ pub const CidrRange = struct {
 
     /// Check if an IP address is within this CIDR range
     pub fn contains(self: Self, addr: []const u8) !bool {
+        // TODO receive std.net.Address
         if (addr.len != 16) return CidrParseError.InvalidAddress;
 
         const full_bytes = self.prefix_len / 8;
