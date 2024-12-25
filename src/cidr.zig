@@ -24,18 +24,20 @@ pub const CidrRange = struct {
 
     /// Parse a CIDR notation string into a CidrRange
     pub fn parse(cidr: []const u8) !CidrRange {
-        // Find the '/' separator
-        const separator_pos = mem.indexOf(u8, cidr, "/") orelse return CidrParseError.InvalidFormat;
+        var it = std.mem.split(u8, cidr, "/");
+        const addr_str = it.next() orelse return error.InvalidFormat;
+        const prefix_str = it.next() orelse return error.InvalidFormat;
+        const must_be_null = it.next();
+        if (must_be_null != null) return error.InvalidFormat;
 
-        // Split into address and prefix length
-        const addr_str = cidr[0..separator_pos];
-        const prefix_str = cidr[separator_pos + 1 ..];
-
-        // Parse prefix length
-        const prefix_len = fmt.parseInt(u8, prefix_str, 10) catch return CidrParseError.InvalidPrefixLength;
+        const prefix_len = std.fmt.parseInt(u8, prefix_str, 10) catch return error.InvalidPrefixLength;
 
         // Try parsing as IPv4
-        if (net.Address.parseIp4(addr_str, 0)) |ipv4| {
+        const maybe_ipv4 = net.Address.parseIp4(addr_str, 0) catch |err| switch (err) {
+            else => null,
+        };
+        if (maybe_ipv4) |ipv4| {
+            // ipv4 only has 32 bits, so prefix_len can only be up to 32 too lol
             if (prefix_len > 32) return CidrParseError.InvalidPrefixLength;
 
             var result = CidrRange{
@@ -44,7 +46,7 @@ pub const CidrRange = struct {
                 .prefix_len = prefix_len,
             };
 
-            // Convert IPv4 to mapped IPv6 format
+            // implementation wise all addresses get mapped to ipv6 internally
             const bytes = std.mem.toBytes(ipv4.in.sa.addr);
             result.first_address[10] = 0xff;
             result.first_address[11] = 0xff;
@@ -56,7 +58,7 @@ pub const CidrRange = struct {
             // Clear host portion
             const host_bits = 32 - prefix_len;
             if (prefix_len == 0) {
-                // For /0, just set the entire address to 0
+                // for /0, just set the entire address to 0
                 std.mem.writeInt(u32, result.first_address[12..16], 0, .big);
             } else if (host_bits > 0) {
                 const mask = ~(@as(u32, (@as(u32, 1) << @as(u5, @intCast(host_bits))) - 1));
@@ -66,63 +68,37 @@ pub const CidrRange = struct {
             }
 
             return result;
-        } else |_| {
-            // Try parsing as IPv6
-            if (net.Address.parseIp6(addr_str, 0)) |ipv6| {
-                if (prefix_len > 128) return CidrParseError.InvalidPrefixLength;
+        }
 
-                var result = CidrRange{
-                    .version = .v6,
-                    .first_address = ipv6.in6.sa.addr,
-                    .prefix_len = prefix_len,
-                };
+        const maybe_ipv6: ?std.net.Address = std.net.Address.parseIp6(addr_str, 0) catch |err| switch (err) {
+            else => null,
+        };
+        if (maybe_ipv6) |ipv6| {
+            if (prefix_len > 128) return CidrParseError.InvalidPrefixLength;
 
-                // Clear host portion
-                const full_bytes = prefix_len / 8;
-                const remaining_bits = prefix_len % 8;
+            var result = CidrRange{
+                .version = .v6,
+                .first_address = ipv6.in6.sa.addr,
+                .prefix_len = prefix_len,
+            };
 
-                if (remaining_bits > 0) {
-                    const mask = @as(u8, 0xFF) << @intCast(8 - remaining_bits);
-                    result.first_address[full_bytes] &= mask;
-                }
+            // clear host portion
+            const full_bytes = prefix_len / 8;
+            const remaining_bits = prefix_len % 8;
 
-                for (result.first_address[full_bytes + @intFromBool(remaining_bits > 0) ..]) |*byte| {
-                    byte.* = 0;
-                }
-
-                return result;
-            } else |_| {
-                return CidrParseError.InvalidAddress;
+            if (remaining_bits > 0) {
+                const mask = @as(u8, 0xFF) << @intCast(8 - remaining_bits);
+                result.first_address[full_bytes] &= mask;
             }
-        }
-    }
 
-    /// Get the last address in the CIDR range
-    pub fn getLastAddress(self: Self) [16]u8 {
-        var last = self.first_address;
-        const full_bytes = self.prefix_len / 8;
-        const remaining_bits = self.prefix_len % 8;
+            for (result.first_address[full_bytes + @intFromBool(remaining_bits > 0) ..]) |*byte| {
+                byte.* = 0;
+            }
 
-        if (remaining_bits > 0) {
-            const mask = @as(u8, 0xFF) >> @intCast(remaining_bits);
-            last[full_bytes] |= mask;
+            return result;
         }
 
-        for (last[full_bytes + @intFromBool(remaining_bits > 0) ..]) |*byte| {
-            byte.* = 0xFF;
-        }
-
-        return last;
-    }
-
-    /// Get the total number of addresses in the range
-    pub fn getAddressCount(self: Self) u128 {
-        const host_bits = switch (self.version) {
-            .v4 => @as(u7, 32),
-            .v6 => @as(u7, 128),
-        } - self.prefix_len;
-
-        return @as(u128, 1) << @intCast(host_bits);
+        return CidrParseError.InvalidAddress;
     }
 
     /// Check if an IP address is within this CIDR range
@@ -155,7 +131,6 @@ pub const CidrRange = struct {
         return true;
     }
 
-    /// Format the CIDR range as a string
     pub fn format(
         self: Self,
         comptime fmt_str: []const u8,
@@ -167,7 +142,6 @@ pub const CidrRange = struct {
 
         switch (self.version) {
             .v4 => {
-                // Format IPv4 address
                 try writer.print("{}.{}.{}.{}/{}", .{
                     self.first_address[12],
                     self.first_address[13],
@@ -177,51 +151,8 @@ pub const CidrRange = struct {
                 });
             },
             .v6 => {
-                // Format IPv6 address
-                const addr = self.first_address;
-                var best_start: usize = 0;
-                var best_len: usize = 0;
-                var current_start: usize = 0;
-                var current_len: usize = 0;
-
-                // Find longest run of zeros for :: compression
-                var i: usize = 0;
-                while (i < 16) : (i += 2) {
-                    if (addr[i] == 0 and addr[i + 1] == 0) {
-                        if (current_len == 0) {
-                            current_start = i;
-                        }
-                        current_len += 2;
-                    } else {
-                        if (current_len > best_len) {
-                            best_start = current_start;
-                            best_len = current_len;
-                        }
-                        current_len = 0;
-                    }
-                }
-                if (current_len > best_len) {
-                    best_start = current_start;
-                    best_len = current_len;
-                }
-
-                // Write address with :: compression if applicable
-                var pos: usize = 0;
-                while (pos < 16) : (pos += 2) {
-                    if (pos == best_start and best_len >= 4) {
-                        try writer.writeAll(if (pos == 0) "::" else ":");
-                        pos += best_len - 2;
-                    } else {
-                        if (pos != 0) try writer.writeAll(":");
-                        const word = @as(u16, addr[pos]) << 8 | addr[pos + 1];
-                        if (word != 0) {
-                            try writer.print("{x}", .{word});
-                        } else {
-                            try writer.writeAll("0");
-                        }
-                    }
-                }
-                try writer.print("/{}", .{self.prefix_len});
+                const addr = std.net.Ip6Address.init(self.first_address, 0, 0, 0);
+                try writer.print("{}/{}", .{ addr, self.prefix_len });
             },
         }
     }
