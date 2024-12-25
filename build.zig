@@ -37,11 +37,17 @@ pub fn build(b: *Builder) void {
 
     const run_cmd = b.addRunArtifact(exe);
     run_cmd.step.dependOn(b.getInstallStep());
+    if (b.args) |args| {
+        run_cmd.addArgs(args);
+    }
     const run_step = b.step("run", "Run main binary");
     run_step.dependOn(&run_cmd.step);
 
     const runtiny_cmd = b.addRunArtifact(exe_tinyhost);
     runtiny_cmd.step.dependOn(b.getInstallStep());
+    if (b.args) |args| {
+        runtiny_cmd.addArgs(args);
+    }
     const runtiny_step = b.step("run-tiny", "Run tinyhost binary");
     runtiny_step.dependOn(&runtiny_cmd.step);
 
