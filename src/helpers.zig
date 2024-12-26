@@ -592,7 +592,7 @@ const policy_table = [_]Policy{
 };
 fn cmpGetPrecedence(addr: std.net.Address) usize {
     for (policy_table) |policy| {
-        if (policy.cidr.contains(&addr.in6.sa.addr) catch unreachable) {
+        if (policy.cidr.contains(addr) catch unreachable) {
             return policy.precedence;
         }
     }

@@ -102,9 +102,25 @@ pub const CidrRange = struct {
     }
 
     /// Check if an IP address is within this CIDR range
-    pub fn contains(self: Self, addr: []const u8) !bool {
-        // TODO receive std.net.Address
-        if (addr.len != 16) return CidrParseError.InvalidAddress;
+    pub fn contains(self: Self, addr: std.net.Address) !bool {
+        var data: [16]u8 = switch (addr.any.family) {
+            std.posix.AF.INET => blk: {
+                const raw_in_bytes = std.mem.toBytes(addr.in.sa.addr);
+
+                var result: [16]u8 = [_]u8{0} ** 16;
+                // Set the IPv4-mapped IPv6 prefix (::ffff:)
+                result[10] = 0xff;
+                result[11] = 0xff;
+                // Copy the IPv4 address bytes
+                @memcpy(result[12..16], &raw_in_bytes);
+
+                break :blk result;
+            },
+            std.posix.AF.INET6 => blk: {
+                break :blk addr.in6.sa.addr;
+            },
+            else => return CidrParseError.InvalidAddress,
+        };
 
         const full_bytes = self.prefix_len / 8;
         const remaining_bits = self.prefix_len % 8;
@@ -113,7 +129,7 @@ pub const CidrRange = struct {
         const start_byte: usize = if (self.version == .v4) 12 else 0;
 
         // Compare full bytes
-        for (self.first_address[start_byte .. start_byte + full_bytes], addr[start_byte .. start_byte + full_bytes], 0..) |a, b, i| {
+        for (self.first_address[start_byte .. start_byte + full_bytes], data[start_byte .. start_byte + full_bytes], 0..) |a, b, i| {
             _ = i;
             if (a != b) {
                 return false;
@@ -124,7 +140,7 @@ pub const CidrRange = struct {
         if (remaining_bits > 0) {
             const mask = @as(u8, 0xFF) << @intCast(8 - remaining_bits);
             const byte_pos = start_byte + full_bytes;
-            if ((self.first_address[byte_pos] & mask) != (addr[byte_pos] & mask)) {
+            if ((self.first_address[byte_pos] & mask) != (data[byte_pos] & mask)) {
                 return false;
             }
         }
@@ -373,14 +389,14 @@ test "IPv4 contains basic tests" {
     const cidr = try CidrRange.parse("192.168.1.0/24");
 
     // These should be in the range
-    try testing.expect(try cidr.contains(&(ip4ToBytes("192.168.1.0", 0))));
-    try testing.expect(try cidr.contains(&(ip4ToBytes("192.168.1.1", 0))));
-    try testing.expect(try cidr.contains(&(ip4ToBytes("192.168.1.255", 0))));
+    try testing.expect(try cidr.contains(std.net.Address.parseIp4("192.168.1.0", 0) catch unreachable));
+    try testing.expect(try cidr.contains(std.net.Address.parseIp4("192.168.1.1", 0) catch unreachable));
+    try testing.expect(try cidr.contains(std.net.Address.parseIp4("192.168.1.255", 0) catch unreachable));
 
     // These should not be in the range
-    try testing.expect(!try cidr.contains(&(ip4ToBytes("192.168.0.255", 0))));
-    try testing.expect(!try cidr.contains(&(ip4ToBytes("192.168.2.0", 0))));
-    try testing.expect(!try cidr.contains(&(ip4ToBytes("192.169.1.1", 0))));
+    try testing.expect(!try cidr.contains(std.net.Address.parseIp4("192.168.0.255", 0) catch unreachable));
+    try testing.expect(!try cidr.contains(std.net.Address.parseIp4("192.168.2.0", 0) catch unreachable));
+    try testing.expect(!try cidr.contains(std.net.Address.parseIp4("192.169.1.1", 0) catch unreachable));
 }
 
 test "IPv6 contains basic tests" {
@@ -388,43 +404,43 @@ test "IPv6 contains basic tests" {
     const cidr = try CidrRange.parse("2001:db8::/64");
 
     // These should be in the range
-    try testing.expect(try cidr.contains(&(try net.Address.parseIp6("2001:db8::", 0)).in6.sa.addr));
-    try testing.expect(try cidr.contains(&(try net.Address.parseIp6("2001:db8::1", 0)).in6.sa.addr));
-    try testing.expect(try cidr.contains(&(try net.Address.parseIp6("2001:db8::ffff", 0)).in6.sa.addr));
+    try testing.expect(try cidr.contains(try net.Address.parseIp6("2001:db8::", 0)));
+    try testing.expect(try cidr.contains(try net.Address.parseIp6("2001:db8::1", 0)));
+    try testing.expect(try cidr.contains(try net.Address.parseIp6("2001:db8::ffff", 0)));
 
     // These should not be in the range
-    try testing.expect(!try cidr.contains(&(try net.Address.parseIp6("2001:db9::", 0)).in6.sa.addr));
-    try testing.expect(!try cidr.contains(&(try net.Address.parseIp6("2001:db8:1::", 0)).in6.sa.addr));
-    try testing.expect(!try cidr.contains(&(try net.Address.parseIp6("2002:db8::", 0)).in6.sa.addr));
+    try testing.expect(!try cidr.contains(try net.Address.parseIp6("2001:db9::", 0)));
+    try testing.expect(!try cidr.contains(try net.Address.parseIp6("2001:db8:1::", 0)));
+    try testing.expect(!try cidr.contains(try net.Address.parseIp6("2002:db8::", 0)));
 }
 
 test "contains edge prefix lengths" {
     // Test /0 (entire address space)
     {
         const cidr_v4 = try CidrRange.parse("0.0.0.0/0");
-        try testing.expect(try cidr_v4.contains(&(ip4ToBytes("0.0.0.0", 0))));
-        try testing.expect(try cidr_v4.contains(&(ip4ToBytes("255.255.255.255", 0))));
-        try testing.expect(try cidr_v4.contains(&(ip4ToBytes("192.168.1.1", 0))));
+        try testing.expect(try cidr_v4.contains(try std.net.Address.parseIp4("0.0.0.0", 0)));
+        try testing.expect(try cidr_v4.contains(try std.net.Address.parseIp4("255.255.255.255", 0)));
+        try testing.expect(try cidr_v4.contains(try std.net.Address.parseIp4("192.168.1.1", 0)));
     }
 
     {
         const cidr_v6 = try CidrRange.parse("::/0");
-        try testing.expect(try cidr_v6.contains(&(try net.Address.parseIp6("::", 0)).in6.sa.addr));
-        try testing.expect(try cidr_v6.contains(&(try net.Address.parseIp6("ffff:ffff:ffff:ffff:ffff:ffff:ffff:ffff", 0)).in6.sa.addr));
-        try testing.expect(try cidr_v6.contains(&(try net.Address.parseIp6("2001:db8::1", 0)).in6.sa.addr));
+        try testing.expect(try cidr_v6.contains(try net.Address.parseIp6("::", 0)));
+        try testing.expect(try cidr_v6.contains(try net.Address.parseIp6("ffff:ffff:ffff:ffff:ffff:ffff:ffff:ffff", 0)));
+        try testing.expect(try cidr_v6.contains(try net.Address.parseIp6("2001:db8::1", 0)));
     }
 
     // Test single address (/32 for IPv4, /128 for IPv6)
     {
         const cidr_v4 = try CidrRange.parse("192.168.1.1/32");
-        try testing.expect(try cidr_v4.contains(&(ip4ToBytes("192.168.1.1", 0))));
-        try testing.expect(!try cidr_v4.contains(&(ip4ToBytes("192.168.1.2", 0))));
+        try testing.expect(try cidr_v4.contains(try std.net.Address.parseIp4("192.168.1.1", 0)));
+        try testing.expect(!try cidr_v4.contains(try std.net.Address.parseIp4("192.168.1.2", 0)));
     }
 
     {
         const cidr_v6 = try CidrRange.parse("2001:db8::1/128");
-        try testing.expect(try cidr_v6.contains(&(try net.Address.parseIp6("2001:db8::1", 0)).in6.sa.addr));
-        try testing.expect(!try cidr_v6.contains(&(try net.Address.parseIp6("2001:db8::2", 0)).in6.sa.addr));
+        try testing.expect(try cidr_v6.contains(try net.Address.parseIp6("2001:db8::1", 0)));
+        try testing.expect(!try cidr_v6.contains(try net.Address.parseIp6("2001:db8::2", 0)));
     }
 }
 
@@ -432,17 +448,17 @@ test "contains non-aligned prefix lengths" {
     // Test IPv4 /23 (two /24 networks)
     {
         const cidr = try CidrRange.parse("192.168.0.0/23");
-        try testing.expect(try cidr.contains(&(ip4ToBytes("192.168.0.1", 0))));
-        try testing.expect(try cidr.contains(&(ip4ToBytes("192.168.1.1", 0))));
-        try testing.expect(!try cidr.contains(&(ip4ToBytes("192.168.2.1", 0))));
+        try testing.expect(try cidr.contains(try std.net.Address.parseIp4("192.168.0.1", 0)));
+        try testing.expect(try cidr.contains(try std.net.Address.parseIp4("192.168.1.1", 0)));
+        try testing.expect(!try cidr.contains(try std.net.Address.parseIp4("192.168.2.1", 0)));
     }
 
     // Test IPv6 /63 (two /64 networks)
     {
         const cidr = try CidrRange.parse("2001:db8::/63");
-        try testing.expect(try cidr.contains(&(try net.Address.parseIp6("2001:db8::", 0)).in6.sa.addr));
-        try testing.expect(try cidr.contains(&(try net.Address.parseIp6("2001:db8:0:1::", 0)).in6.sa.addr));
-        try testing.expect(!try cidr.contains(&(try net.Address.parseIp6("2001:db8:0:2::", 0)).in6.sa.addr));
+        try testing.expect(try cidr.contains(try net.Address.parseIp6("2001:db8::", 0)));
+        try testing.expect(try cidr.contains(try net.Address.parseIp6("2001:db8:0:1::", 0)));
+        try testing.expect(!try cidr.contains(try net.Address.parseIp6("2001:db8:0:2::", 0)));
     }
 }
 
@@ -450,26 +466,16 @@ test "contains byte boundary edge cases" {
     // Test IPv4 /16 (byte boundary)
     {
         const cidr = try CidrRange.parse("192.168.0.0/16");
-        try testing.expect(try cidr.contains(&(ip4ToBytes("192.168.0.0", 0))));
-        try testing.expect(try cidr.contains(&(ip4ToBytes("192.168.255.255", 0))));
-        try testing.expect(!try cidr.contains(&(ip4ToBytes("192.169.0.0", 0))));
+        try testing.expect(try cidr.contains(try std.net.Address.parseIp4("192.168.0.0", 0)));
+        try testing.expect(try cidr.contains(try std.net.Address.parseIp4("192.168.255.255", 0)));
+        try testing.expect(!try cidr.contains(try std.net.Address.parseIp4("192.169.0.0", 0)));
     }
 
     // Test IPv6 /48 (byte boundary)
     {
         const cidr = try CidrRange.parse("2001:db8:1100::/48");
-        try testing.expect(try cidr.contains(&(try net.Address.parseIp6("2001:db8:1100::", 0)).in6.sa.addr));
-        try testing.expect(try cidr.contains(&(try net.Address.parseIp6("2001:db8:1100:ffff::", 0)).in6.sa.addr));
-        try testing.expect(!try cidr.contains(&(try net.Address.parseIp6("2001:db8:1101::", 0)).in6.sa.addr));
+        try testing.expect(try cidr.contains(try net.Address.parseIp6("2001:db8:1100::", 0)));
+        try testing.expect(try cidr.contains(try net.Address.parseIp6("2001:db8:1100:ffff::", 0)));
+        try testing.expect(!try cidr.contains(try net.Address.parseIp6("2001:db8:1101::", 0)));
     }
-}
-
-test "contains invalid input" {
-    const cidr = try CidrRange.parse("192.168.1.0/24");
-
-    // Test with wrong size input
-    try testing.expectError(error.InvalidAddress, cidr.contains(&[_]u8{ 192, 168, 1, 1 }));
-    try testing.expectError(error.InvalidAddress, cidr.contains(&[_]u8{}));
-    try testing.expectError(error.InvalidAddress, cidr.contains(&[_]u8{0} ** 15));
-    try testing.expectError(error.InvalidAddress, cidr.contains(&[_]u8{0} ** 17));
 }
