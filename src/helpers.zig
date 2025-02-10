@@ -1,4 +1,5 @@
 const std = @import("std");
+const builtin = @import("builtin");
 const dns = @import("lib.zig");
 
 const CidrRange = @import("cidr.zig").CidrRange;
@@ -263,6 +264,9 @@ pub fn connectToResolver(address: []const u8) !DNSConnection {
 /// "/etc/resolv.conf" file.
 pub fn connectToSystemResolver() !DNSConnection {
     var out_buffer: [256]u8 = undefined;
+
+    if (builtin.os.tag != .linux) @compileError("connectToSystemResolver not supported on this target");
+
     const nameserver_address_string = (try randomNameserver(&out_buffer)).?;
 
     return connectToResolver(nameserver_address_string);
