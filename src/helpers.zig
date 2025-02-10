@@ -247,8 +247,8 @@ pub fn parseFullPacket(
 const logger = std.log.scoped(.dns_helpers);
 
 /// Open a socket to the DNS resolver specified in input parameter
-pub fn connectToResolver(address: []const u8) !DNSConnection {
-    const addr = try std.net.Address.resolveIp(address, 53);
+pub fn connectToResolver(address: []const u8, ip: ?u16) !DNSConnection {
+    const addr = try std.net.Address.parseIp4(address, ip orelse 53);
 
     const flags: u32 = std.posix.SOCK.DGRAM;
     const fd = try std.posix.socket(addr.any.family, flags, std.posix.IPPROTO.UDP);
@@ -265,7 +265,7 @@ pub fn connectToSystemResolver() !DNSConnection {
     var out_buffer: [256]u8 = undefined;
     const nameserver_address_string = (try randomNameserver(&out_buffer)).?;
 
-    return connectToResolver(nameserver_address_string);
+    return connectToResolver(nameserver_address_string, null);
 }
 
 pub fn randomNameserver(output_buffer: []u8) !?[]const u8 {
