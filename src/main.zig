@@ -1,4 +1,5 @@
 const std = @import("std");
+const builtin = @import("builtin");
 const dns = @import("lib.zig");
 
 const logger = std.log.scoped(.zigdig_main);
@@ -22,14 +23,26 @@ fn logfn(
 }
 
 pub fn main() !void {
-    if (std.mem.eql(u8, std.posix.getenv("DEBUG") orelse "", "1")) current_log_level = .debug;
     var gpa = std.heap.GeneralPurposeAllocator(.{}){};
     defer {
         _ = gpa.deinit();
     }
     const allocator = gpa.allocator();
 
-    var args_it = std.process.args();
+    if (builtin.os.tag == .windows) {
+        const debug = try std.unicode.utf8ToUtf16LeAllocZ(allocator, "DEBUG");
+        defer allocator.free(debug);
+
+        const debug_expected = try std.unicode.utf8ToUtf16LeAllocZ(allocator, "1");
+        defer allocator.free(debug_expected);
+
+        if (std.mem.eql(u16, std.process.getenvW(debug) orelse &[_]u16{0}, debug_expected)) current_log_level = .debug;
+    } else {
+        if (std.mem.eql(u8, std.posix.getenv("DEBUG") orelse "", "1")) current_log_level = .debug;
+    }
+
+    var args_it = try std.process.argsWithAllocator(allocator);
+    defer args_it.deinit();
     _ = args_it.skip();
 
     const name_string = (args_it.next() orelse {
@@ -78,7 +91,7 @@ pub fn main() !void {
 
     logger.debug("packet: {}", .{packet});
 
-    const conn = try dns.helpers.connectToSystemResolver();
+    const conn = if (builtin.os.tag == .windows) try dns.helpers.connectToResolver("8.8.8.8", null) else try dns.helpers.connectToSystemResolver();
     defer conn.close();
 
     logger.info("selected nameserver: {}\n", .{conn.address});
