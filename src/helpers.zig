@@ -1,5 +1,6 @@
 const std = @import("std");
 const builtin = @import("builtin");
+const ws2_32 = std.os.windows.ws2_32;
 const dns = @import("lib.zig");
 
 const CidrRange = @import("cidr.zig").CidrRange;
@@ -560,19 +561,88 @@ pub fn getAddressList(incoming_name: []const u8, port: u16, allocator: std.mem.A
         try final_list.append(std.net.Address.parseIp4("127.0.0.1", port) catch unreachable);
         try final_list.append(std.net.Address.parseIp6("::1", port) catch unreachable);
     } else {
-        try lookupHosts(&final_list, std.posix.AF.INET, port, incoming_name);
-        try lookupHosts(&final_list, std.posix.AF.INET, port, incoming_name);
+        if (builtin.os.tag == .windows) {
+            const name_c = try allocator.dupeZ(u8, incoming_name);
+            defer allocator.free(name_c);
 
-        if (final_list.items.len == 0) {
-            // if that didn't work, go to dns server
-            const addrs_v4 = try fetchTrustedAddresses(allocator, name, .A);
-            defer allocator.free(addrs_v4);
-            for (addrs_v4) |addr| try final_list.append(addr);
+            const port_c = try std.fmt.allocPrintZ(allocator, "{}", .{port});
+            defer allocator.free(port_c);
 
-            const addrs_v6 = try fetchTrustedAddresses(allocator, name, .AAAA);
-            defer allocator.free(addrs_v6);
-            for (addrs_v6) |addr| try final_list.append(addr);
-        }
+            var addr_info: ?*ws2_32.addrinfoa = null;
+
+            const hints: ws2_32.addrinfo = .{
+                .flags = ws2_32.AI.NUMERICSERV,
+                .family = ws2_32.AF.UNSPEC,
+                .socktype = ws2_32.SOCK.STREAM,
+                .protocol = ws2_32.IPPROTO.TCP,
+                .addr = null,
+                .canonname = null,
+                .addrlen = 0,
+                .next = null,
+            };
+
+            for (0..2) |_| {
+                const res = ws2_32.getaddrinfo(name_c.ptr, port_c.ptr, &hints, &addr_info);
+
+                if (res != 0) {
+                    switch (@as(ws2_32.WinsockError, @enumFromInt(res))) {
+                        .WSATRY_AGAIN => return error.TryAgain,
+                        .WSAEINVAL => return error.InvalidArgument,
+                        .WSANO_RECOVERY => return error.Fatal,
+                        .WSAEAFNOSUPPORT => return error.FamilyNotSupported,
+                        .WSA_NOT_ENOUGH_MEMORY => return error.NotEnoughMemory,
+                        .WSAHOST_NOT_FOUND => return error.HostNotFound,
+                        .WSATYPE_NOT_FOUND => return error.TypeNotFound,
+                        .WSAESOCKTNOSUPPORT => return error.SocketTypeNotSupported,
+                        .WSANOTINITIALISED => {
+                            try std.os.windows.callWSAStartup();
+                            continue;
+                        },
+                        else => return error.InternalUnexpected,
+                    }
+                } else break;
+            } else return error.InternalUnexpected;
+
+            defer ws2_32.freeaddrinfo(addr_info);
+
+            while (addr_info) |ai| : (addr_info = ai.next) {
+                switch (ai.family) {
+                    ws2_32.AF.INET => {
+                        const sa: *ws2_32.sockaddr.in = @as(
+                            *ws2_32.sockaddr.in,
+                            @ptrCast(@alignCast(ai.addr orelse continue)),
+                        );
+                        const addr = std.net.Address.initIp4(@as([4]u8, @bitCast(sa.addr)), sa.port);
+
+                        try final_list.append(addr);
+                    },
+                    ws2_32.AF.INET6 => {
+                        const sa: *ws2_32.sockaddr.in6 = @as(
+                            *ws2_32.sockaddr.in6,
+                            @ptrCast(@alignCast(ai.addr orelse continue)),
+                        );
+                        const addr = std.net.Address.initIp6(sa.addr, sa.port, 0, 0);
+
+                        try final_list.append(addr);
+                    },
+                    else => continue,
+                }
+            }
+        } else if (builtin.os.tag == .linux) {
+            try lookupHosts(&final_list, std.posix.AF.INET, port, incoming_name);
+            try lookupHosts(&final_list, std.posix.AF.INET, port, incoming_name);
+
+            if (final_list.items.len == 0) {
+                // if that didn't work, go to dns server
+                const addrs_v4 = try fetchTrustedAddresses(allocator, name, .A);
+                defer allocator.free(addrs_v4);
+                for (addrs_v4) |addr| try final_list.append(addr);
+
+                const addrs_v6 = try fetchTrustedAddresses(allocator, name, .AAAA);
+                defer allocator.free(addrs_v6);
+                for (addrs_v6) |addr| try final_list.append(addr);
+            }
+        } else @compileError("getAddressList not supported on this target");
     }
 
     // RFC 6761 is not run if everything is v4 or only 1 address returned
