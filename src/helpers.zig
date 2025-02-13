@@ -249,7 +249,20 @@ const logger = std.log.scoped(.dns_helpers);
 
 /// Open a socket to the DNS resolver specified in input parameter
 pub fn connectToResolver(address: []const u8, port: ?u16) !DNSConnection {
-    const addr = try std.net.Address.resolveIp(address, port orelse 53);
+    const addr = blk: {
+        if (builtin.os.tag == .windows) {
+            // it is recommended to use `resolveIp`, but windows currently does
+            // not support resolving ipv6 addresses. there is a PR for the
+            // stdlib here: https://github.com/ziglang/zig/pull/22555 as soon
+            // as that is merged, this can be removed. till then, as
+            // `resolveIp` is only recommended in order to handle ipv6 link
+            // local addresses, we can use `parseIp`, as the use case
+            // `resolveIp` is intended for doesnt work.
+            break :blk try std.net.Address.parseIp(address, port orelse 53);
+        } else {
+            break :blk try std.net.Address.resolveIp(address, port orelse 53);
+        }
+    };
 
     const flags: u32 = std.posix.SOCK.DGRAM;
     const fd = try std.posix.socket(addr.any.family, flags, std.posix.IPPROTO.UDP);
