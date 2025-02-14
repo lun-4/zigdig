@@ -279,6 +279,7 @@ pub fn connectToResolver(address: []const u8, port: ?u16) !DNSConnection {
 pub fn connectToSystemResolver() !DNSConnection {
     var out_buffer: [256]u8 = undefined;
 
+    if (builtin.is_test and builtin.os.tag != .linux) return error.SkipZigTest;
     if (builtin.os.tag != .linux) @compileError("connectToSystemResolver not supported on this target");
 
     const nameserver_address_string = (try randomNameserver(&out_buffer)).?;
