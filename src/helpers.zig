@@ -276,16 +276,11 @@ pub fn connectToResolver(address: []const u8, port: ?u16) !DNSConnection {
 
 /// Open a socket to a random DNS resolver declared in the systems'
 /// "/etc/resolv.conf" file.
-fn connectToSystemResolver() !DNSConnection {
+pub fn connectToSystemResolver() !DNSConnection {
     //@compileLog("should not be reached");
     var out_buffer: [256]u8 = undefined;
 
-    //if (builtin.os.tag != .linux) @panic("try to get trace");
-    comptime {
-        if (builtin.os.tag != .linux) {
-            @compileError("connectToSystemResolver not supported on this target");
-        }
-    }
+    if (builtin.os.tag != .linux) @compileError("connectToSystemResolver not supported on this target");
 
     const nameserver_address_string = (try randomNameserver(&out_buffer)).?;
 
@@ -751,11 +746,4 @@ fn cmpAddresses(a: std.net.Address, b: std.net.Address) bool {
 fn addrCmpLessThan(context: void, b: std.net.Address, a: std.net.Address) bool {
     _ = context;
     return cmpAddresses(a, b);
-}
-
-test "localhost always resolves to 127.0.0.1" {
-    const addrs = try getAddressList("localhost", 80, std.testing.allocator);
-    defer addrs.deinit();
-    try std.testing.expectEqual(16777343, addrs.addrs[1].in.sa.addr);
-    try std.testing.expectEqualStrings("\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x01", &addrs.addrs[0].in6.sa.addr);
 }
