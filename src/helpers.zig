@@ -572,7 +572,7 @@ pub fn getAddressList(incoming_name: []const u8, port: u16, allocator: std.mem.A
             var addr_info: ?*ws2_32.addrinfoa = null;
 
             const hints: ws2_32.addrinfo = .{
-                .flags = ws2_32.AI.NUMERICSERV,
+                .flags = .{ .NUMERICSERV = true },
                 .family = ws2_32.AF.UNSPEC,
                 .socktype = ws2_32.SOCK.STREAM,
                 .protocol = ws2_32.IPPROTO.TCP,
