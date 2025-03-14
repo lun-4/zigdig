@@ -747,7 +747,6 @@ fn addrCmpLessThan(context: void, b: std.net.Address, a: std.net.Address) bool {
 }
 
 test "localhost always resolves to 127.0.0.1" {
-    if (builtin.os.tag != .linux) @compileError("this is a test");
     const addrs = try getAddressList("localhost", 80, std.testing.allocator);
     defer addrs.deinit();
     try std.testing.expectEqual(16777343, addrs.addrs[1].in.sa.addr);
