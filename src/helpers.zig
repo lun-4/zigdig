@@ -103,7 +103,7 @@ pub fn printAsZoneFile(
 /// Generate a random header ID to use in a query.
 pub fn randomHeaderId() u16 {
     const seed = @as(u64, @truncate(@as(u128, @bitCast(std.time.nanoTimestamp()))));
-    var r = std.rand.DefaultPrng.init(seed);
+    var r = std.Random.DefaultPrng.init(seed);
     return r.random().int(u16);
 }
 
@@ -291,7 +291,7 @@ pub fn randomNameserver(output_buffer: []u8) !?[]const u8 {
     while (try file.reader().readUntilDelimiterOrEof(&line_buffer, '\n')) |line| {
         if (std.mem.startsWith(u8, line, "#")) continue;
 
-        var ns_it = std.mem.split(u8, line, " ");
+        var ns_it = std.mem.splitSequence(u8, line, " ");
         const decl_name = ns_it.next();
         if (decl_name == null) continue;
 
@@ -301,7 +301,7 @@ pub fn randomNameserver(output_buffer: []u8) !?[]const u8 {
     }
 
     const seed = @as(u64, @truncate(@as(u128, @bitCast(std.time.nanoTimestamp()))));
-    var r = std.rand.DefaultPrng.init(seed);
+    var r = std.Random.DefaultPrng.init(seed);
     const selected = r.random().uintLessThan(usize, nameserver_amount);
 
     try file.seekTo(0);
@@ -310,7 +310,7 @@ pub fn randomNameserver(output_buffer: []u8) !?[]const u8 {
     while (try file.reader().readUntilDelimiterOrEof(&line_buffer, '\n')) |line| {
         if (std.mem.startsWith(u8, line, "#")) continue;
 
-        var ns_it = std.mem.split(u8, line, " ");
+        var ns_it = std.mem.splitSequence(u8, line, " ");
         const decl_name = ns_it.next();
         if (decl_name == null) continue;
 

@@ -24,7 +24,7 @@ pub const CidrRange = struct {
 
     /// Parse a CIDR notation string into a CidrRange
     pub fn parse(cidr: []const u8) !CidrRange {
-        var it = std.mem.split(u8, cidr, "/");
+        var it = std.mem.splitSequence(u8, cidr, "/");
         const addr_str = it.next() orelse return error.InvalidFormat;
         const prefix_str = it.next() orelse return error.InvalidFormat;
         const must_be_null = it.next();

@@ -111,9 +111,9 @@ pub const Header = packed struct {
         // non-u8-aligned data from it
         var reader = std.io.bitReader(.big, byte_reader);
 
-        const fields = @typeInfo(Self).Struct.fields;
+        const fields = @typeInfo(Self).@"struct".fields;
         inline for (fields) |field| {
-            var out_bits: usize = undefined;
+            var out_bits: u16 = undefined;
             @field(self, field.name) = switch (field.type) {
                 bool => (try reader.readBits(u1, 1, &out_bits)) > 0,
                 u3 => try reader.readBits(u3, 3, &out_bits),
@@ -137,7 +137,7 @@ pub const Header = packed struct {
 
         var written_bits: usize = 0;
 
-        const fields = @typeInfo(Self).Struct.fields;
+        const fields = @typeInfo(Self).@"struct".fields;
         inline for (fields) |field| {
             const value = @field(self, field.name);
             written_bits += @bitSizeOf(field.type);

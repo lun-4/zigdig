@@ -11,7 +11,7 @@ pub var current_log_level: std.log.Level = .info;
 
 fn logfn(
     comptime message_level: std.log.Level,
-    comptime scope: @Type(.EnumLiteral),
+    comptime scope: @Type(.enum_literal),
     comptime format: []const u8,
     args: anytype,
 ) void {

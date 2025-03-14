@@ -60,7 +60,7 @@ pub const ResourceType = enum(u16) {
 
         const uppercased = buffer[0..str.len];
 
-        const type_info = @typeInfo(Self).Enum;
+        const type_info = @typeInfo(Self).@"enum";
         inline for (type_info.fields) |field| {
             if (std.mem.eql(u8, uppercased, field.name)) {
                 return @as(Self, @enumFromInt(field.value));

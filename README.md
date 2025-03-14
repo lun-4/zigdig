@@ -19,7 +19,7 @@ help me decide if this api is good: https://github.com/lun-4/zigdig/issues/10
 
 ## how do
 
- - zig 0.12.0: https://ziglang.org
+ - zig 0.14.0: https://ziglang.org
  - have a `/etc/resolv.conf`
  - tested on linux, should work on bsd i think
 

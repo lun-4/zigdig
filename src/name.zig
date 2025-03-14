@@ -301,7 +301,7 @@ pub const FullName = struct {
     }!Self {
         if (domain.len > 255) return error.Overflow;
 
-        var it = std.mem.split(u8, domain, ".");
+        var it = std.mem.splitSequence(u8, domain, ".");
 
         // labels can finish in a dot, depresenting the null label right after
         // this is a dirty solution so that i dont need to write to memory too much
@@ -311,7 +311,7 @@ pub const FullName = struct {
             label_count += 1;
         }
 
-        it = std.mem.split(u8, domain, ".");
+        it = std.mem.splitSequence(u8, domain, ".");
         var idx: usize = 0;
         while (it.next()) |label| {
             if (idx == label_count - 1 and label.len == 0) continue;
@@ -417,9 +417,9 @@ pub const NamePool = struct {
 
                             const packet_index =
                                 if (held_name.packet_index) |idx|
-                                idx
-                            else
-                                continue;
+                                    idx
+                                else
+                                    continue;
 
                             // calculate end packet offset using length of the
                             // full name.
