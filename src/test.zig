@@ -295,3 +295,10 @@ test "rdata serialization" {
     const encoded_result = encodeBase64(&encode_buffer, serialized_result);
     try std.testing.expectEqualStrings(PACKET_WITH_RDATA, encoded_result);
 }
+
+test "everything" {
+    std.testing.refAllDecls(@This());
+    std.testing.refAllDecls(@import("name.zig"));
+    std.testing.refAllDecls(@import("helpers.zig"));
+    std.testing.refAllDecls(@import("cidr.zig"));
+}
