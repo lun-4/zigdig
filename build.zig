@@ -29,6 +29,7 @@ pub fn build(b: *Builder) void {
     _ = b.addModule("zigdig", .{ .root_source_file = b.path("src/main.zig") });
     var lib_tests = b.addTest(.{
         .root_source_file = b.path("src/main.zig"),
+        .target = target,
         .optimize = optimize,
     });
 
