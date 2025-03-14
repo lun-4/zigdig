@@ -276,12 +276,16 @@ pub fn connectToResolver(address: []const u8, port: ?u16) !DNSConnection {
 
 /// Open a socket to a random DNS resolver declared in the systems'
 /// "/etc/resolv.conf" file.
-pub fn connectToSystemResolver() !DNSConnection {
+fn connectToSystemResolver() !DNSConnection {
     //@compileLog("should not be reached");
     var out_buffer: [256]u8 = undefined;
 
-    if (builtin.os.tag != .linux) @panic("try to get trace");
-    //  if (builtin.os.tag != .linux) @compileError("connectToSystemResolver not supported on this target");
+    //if (builtin.os.tag != .linux) @panic("try to get trace");
+    comptime {
+        if (builtin.os.tag != .linux) {
+            @compileError("connectToSystemResolver not supported on this target");
+        }
+    }
 
     const nameserver_address_string = (try randomNameserver(&out_buffer)).?;
 
