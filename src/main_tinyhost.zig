@@ -21,14 +21,21 @@ fn logfn(
 }
 
 pub fn main() !void {
-    if (std.mem.eql(u8, std.posix.getenv("DEBUG") orelse "", "1")) current_log_level = .debug;
     var gpa = std.heap.GeneralPurposeAllocator(.{}){};
     defer {
         _ = gpa.deinit();
     }
     const allocator = gpa.allocator();
 
-    var args_it = std.process.args();
+    const debug = std.process.getEnvVarOwned(allocator, "DEBUG") catch |err| switch (err) {
+        error.EnvironmentVariableNotFound => try allocator.dupe(u8, ""),
+        else => return err,
+    };
+    defer allocator.free(debug);
+    if (std.mem.eql(u8, debug, "1")) current_log_level = .debug;
+
+    var args_it = try std.process.argsWithAllocator(allocator);
+    defer args_it.deinit();
     _ = args_it.skip();
 
     const name_string = (args_it.next() orelse {
