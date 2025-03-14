@@ -279,7 +279,6 @@ pub fn connectToResolver(address: []const u8, port: ?u16) !DNSConnection {
 pub fn connectToSystemResolver() !DNSConnection {
     var out_buffer: [256]u8 = undefined;
 
-    if (builtin.is_test and builtin.os.tag != .linux) return error.SkipZigTest;
     if (builtin.os.tag != .linux) @compileError("connectToSystemResolver not supported on this target");
 
     const nameserver_address_string = (try randomNameserver(&out_buffer)).?;
@@ -748,6 +747,7 @@ fn addrCmpLessThan(context: void, b: std.net.Address, a: std.net.Address) bool {
 }
 
 test "localhost always resolves to 127.0.0.1" {
+    if (builtin.os.tag != .linux) return error.SkipZigTest;
     const addrs = try getAddressList("localhost", 80, std.testing.allocator);
     defer addrs.deinit();
     try std.testing.expectEqual(16777343, addrs.addrs[1].in.sa.addr);
