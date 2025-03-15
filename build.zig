@@ -27,13 +27,16 @@ pub fn build(b: *Builder) void {
     b.installArtifact(exe_tinyhost);
 
     _ = b.addModule("zigdig", .{ .root_source_file = b.path("src/main.zig") });
-    var lib_tests = b.addTest(.{
-        .root_source_file = b.path("src/main.zig"),
+    const lib_tests = b.addTest(.{
+        .root_source_file = b.path("src/test.zig"),
+        .target = target,
         .optimize = optimize,
     });
 
+    const run_lib_unit_tests = b.addRunArtifact(lib_tests);
+
     const test_step = b.step("test", "Run library tests");
-    test_step.dependOn(&lib_tests.step);
+    test_step.dependOn(&run_lib_unit_tests.step);
 
     const run_cmd = b.addRunArtifact(exe);
     run_cmd.step.dependOn(b.getInstallStep());

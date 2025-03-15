@@ -4,6 +4,7 @@ const Allocator = std.mem.Allocator;
 const io = std.io;
 
 const dns = @import("lib.zig");
+const helpers = @import("helpers.zig");
 const Packet = dns.Packet;
 
 test "convert domain string to dns name" {
@@ -294,4 +295,17 @@ test "rdata serialization" {
     var encode_buffer: [1024]u8 = undefined;
     const encoded_result = encodeBase64(&encode_buffer, serialized_result);
     try std.testing.expectEqualStrings(PACKET_WITH_RDATA, encoded_result);
+}
+
+test "localhost always resolves to 127.0.0.1" {
+    const addrs = try helpers.getAddressList("localhost", 80, std.testing.allocator);
+    defer addrs.deinit();
+    try std.testing.expectEqual(16777343, addrs.addrs[1].in.sa.addr);
+    try std.testing.expectEqualStrings("\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x01", &addrs.addrs[0].in6.sa.addr);
+}
+
+test "everything" {
+    std.testing.refAllDecls(@This());
+    std.testing.refAllDecls(@import("name.zig"));
+    std.testing.refAllDecls(@import("cidr.zig"));
 }
